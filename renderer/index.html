@@ -19,7 +19,6 @@
     --accent-glow: rgba(170, 212, 255, 0.4);
     --header-h: 24px;
     --gap: 1px;
-    --toolbar-h: 32px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,91 +31,6 @@
     color: var(--text);
     font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
     font-size: 11px;
-  }
-
-  /* ===== TOP TOOLBAR (auto-hide) ===== */
-  .toolbar-zone {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 6px;
-    z-index: 1000;
-  }
-
-  .toolbar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: var(--toolbar-h);
-    background: var(--panel-2);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    padding: 0 8px;
-    gap: 4px;
-    z-index: 1001;
-    transform: translateY(-100%);
-    transition: transform 0.18s ease;
-  }
-
-  .toolbar-zone:hover ~ .toolbar,
-  .toolbar:hover,
-  body.toolbar-pinned .toolbar,
-  body.modal-open .toolbar {
-    transform: translateY(0);
-  }
-
-  .toolbar .brand {
-    font-weight: 700;
-    font-size: 11px;
-    letter-spacing: 1px;
-    color: var(--accent);
-    text-transform: uppercase;
-    margin-right: 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .toolbar .brand .live-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent-glow);
-    animation: pulse 2s infinite;
-  }
-
-  .toolbar button {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    cursor: pointer;
-    padding: 3px 10px;
-    font-size: 10px;
-    border-radius: 3px;
-    transition: all 0.15s ease;
-    font-family: inherit;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 600;
-  }
-
-  .toolbar button:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-    background: rgba(170, 212, 255, 0.05);
-  }
-
-  .toolbar .spacer { flex: 1; }
-
-  .toolbar .clock {
-    color: var(--text-dim);
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
-    margin-left: 8px;
   }
 
   /* ===== GRID ===== */
@@ -459,95 +373,6 @@
 
   .modal-footer button:hover { opacity: 0.85; }
 
-  /* ===== CLOSED PANELS DROPDOWN ===== */
-  .closed-panels { position: relative; }
-
-  .closed-panels .menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    min-width: 220px;
-    display: none;
-    flex-direction: column;
-    z-index: 1002;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  .closed-panels.open .menu { display: flex; }
-
-  .closed-panels .menu-item {
-    padding: 8px 12px;
-    cursor: pointer;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text);
-    border-bottom: 1px solid var(--border);
-    transition: all 0.1s ease;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .closed-panels .menu-item:last-child { border-bottom: 0; }
-  .closed-panels .menu-item:hover { background: var(--panel-2); color: var(--accent); }
-  .closed-panels .menu-item.empty { color: var(--text-dim); cursor: default; }
-  .closed-panels .menu-item.empty:hover { background: transparent; color: var(--text-dim); }
-
-  .closed-panels .menu-item .item-label {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .closed-panels .menu-item .item-action {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    padding: 2px 6px;
-    font-size: 11px;
-    border-radius: 2px;
-    transition: all 0.1s ease;
-    flex-shrink: 0;
-  }
-
-  .closed-panels .menu-item .item-action:hover {
-    color: #ff6b6b;
-    background: rgba(255, 107, 107, 0.1);
-    border-color: #ff6b6b;
-  }
-
-  .closed-panels .menu-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 0;
-  }
-
-  .closed-panels .menu-action {
-    padding: 8px 12px;
-    cursor: pointer;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--accent);
-    transition: all 0.1s ease;
-    font-weight: 600;
-    text-align: center;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .closed-panels .menu-action:hover {
-    background: var(--panel-2);
-  }
-
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -583,30 +408,6 @@
 </style>
 </head>
 <body>
-
-<!-- TOP TOOLBAR -->
-<div class="toolbar-zone"></div>
-<div class="toolbar" id="toolbar">
-  <div class="brand">
-    <span class="live-dot"></span>
-    <span>AARONEAL</span>
-  </div>
-  <button onclick="addPanelDialog()" title="Add a new panel">+ Add Panel</button>
-  <div class="closed-panels" id="closed-panels-wrapper">
-    <button onclick="toggleClosedMenu(event)">&#8635; Reopen</button>
-    <div class="menu" id="closed-menu"></div>
-  </div>
-  <div class="closed-panels" id="layouts-wrapper">
-    <button onclick="toggleLayoutsMenu(event)">&#128193; Layouts</button>
-    <div class="menu" id="layouts-menu"></div>
-  </div>
-  <button onclick="toggleLock()" id="lock-btn">&#128275; Unlocked</button>
-  <button onclick="reloadAll()">&#8635; Reload All</button>
-  <button onclick="openSettings()" title="Settings">&#9881; Settings</button>
-  <button onclick="resetLayout()" title="Reset to default layout">&#8962; Reset</button>
-  <div class="spacer"></div>
-  <span class="clock" id="clock"></span>
-</div>
 
 <!-- GRID -->
 <div class="grid-wrapper" id="grid-wrapper">
@@ -687,11 +488,6 @@
         <label for="setting-animate">Animate panel movements</label>
       </div>
 
-      <div class="checkbox-row">
-        <input type="checkbox" id="setting-pin-toolbar">
-        <label for="setting-pin-toolbar">Always show toolbar (don't auto-hide)</label>
-      </div>
-
       <hr>
       <div class="section-title">Reset</div>
       <button class="preset-btn" style="text-align:center; width:100%;" onclick="resetSettings()">Reset settings to defaults</button>
@@ -719,7 +515,8 @@
     'activity-feed': {
       title: 'Activity Feed',
       url: `https://streamelements.com/dashboard/6214670f53678f6f0d07d53d/activity/popout`,
-      w: 4, h: 6
+      w: 4, h: 6,
+      type: 'webview'  // webview so OAuth postMessage callback works (window.opener chain intact)
     },
     'chat': {
       title: 'Chat',
@@ -772,8 +569,7 @@
     rows: 12,
     gap: 1,
     float: true,
-    animate: true,
-    pinToolbar: false
+    animate: true
   };
 
   // ============ STATE ============
@@ -799,7 +595,6 @@
 
   function applySettings() {
     document.documentElement.style.setProperty('--gap', settings.gap + 'px');
-    document.body.classList.toggle('toolbar-pinned', !!settings.pinToolbar);
 
     if (grid) {
       grid.cellHeight(calculateCellHeight());
@@ -822,7 +617,6 @@
     document.getElementById('setting-gap-val').textContent = settings.gap;
     document.getElementById('setting-float').checked = settings.float;
     document.getElementById('setting-animate').checked = settings.animate;
-    document.getElementById('setting-pin-toolbar').checked = settings.pinToolbar;
 
     document.getElementById('settings-modal').classList.add('show');
     document.body.classList.add('modal-open');
@@ -896,11 +690,6 @@
     document.getElementById('setting-animate').addEventListener('change', e => {
       if (pendingSettings) pendingSettings.animate = e.target.checked;
       if (grid) grid.opts.animate = e.target.checked;
-    });
-
-    document.getElementById('setting-pin-toolbar').addEventListener('change', e => {
-      if (pendingSettings) pendingSettings.pinToolbar = e.target.checked;
-      document.body.classList.toggle('toolbar-pinned', e.target.checked);
     });
   }
 
@@ -1217,6 +1006,20 @@
 
     grid.addWidget(widget);
     panels[id] = config;
+
+    // Attach zoom handler for webview panels so content scales correctly
+    if (config.type === 'webview') {
+      requestAnimationFrame(() => {
+        const wv = document.querySelector(`#content-${id} webview`);
+        if (wv) {
+          wv.addEventListener('dom-ready', () => {
+            // Slight zoom-out so chat input bar and events ribbon aren't clipped
+            wv.setZoomFactor(0.9);
+          });
+        }
+      });
+    }
+
     saveLayout();
   }
 
@@ -1231,6 +1034,7 @@
     delete panels[id];
     saveLayout();
     saveClosedPanels();
+    notifyMenuUpdate();
   }
 
   function reopenPanel(idx) {
@@ -1239,7 +1043,7 @@
     const newId = `p-${config.preset || 'custom'}-${Date.now()}`;
     addPanel(newId, config, { w: config.w, h: config.h });
     saveClosedPanels();
-    closeClosedMenu();
+    notifyMenuUpdate();
   }
 
   // ============ DIALOGS ============
@@ -1268,31 +1072,6 @@
     addPanel(id, { title: name, url, w: 8, h: 12 });
     closeAddModal();
   }
-
-  // ============ CLOSED PANELS MENU ============
-  function toggleClosedMenu(e) {
-    if (e) e.stopPropagation();
-    const wrapper = document.getElementById('closed-panels-wrapper');
-    wrapper.classList.toggle('open');
-    if (wrapper.classList.contains('open')) renderClosedMenu();
-  }
-  function closeClosedMenu() {
-    document.getElementById('closed-panels-wrapper').classList.remove('open');
-  }
-  function renderClosedMenu() {
-    const menu = document.getElementById('closed-menu');
-    if (closedPanels.length === 0) {
-      menu.innerHTML = '<div class="menu-item empty">No closed panels</div>';
-      return;
-    }
-    menu.innerHTML = closedPanels.map((p, i) =>
-      `<div class="menu-item" onclick="reopenPanel(${i})"><span class="item-label">+ ${escapeHtml(p.title)}</span></div>`
-    ).join('');
-  }
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('#closed-panels-wrapper')) closeClosedMenu();
-    if (!e.target.closest('#layouts-wrapper')) closeLayoutsMenu();
-  });
 
   // ============ SAVED LAYOUTS ============
   function getSavedLayouts() {
@@ -1323,14 +1102,7 @@
     if (!captured) return;
     layouts.push({ name: trimmedName, ...captured });
     setSavedLayouts(layouts);
-    closeLayoutsMenu();
-    const btn = document.querySelector('#layouts-wrapper button');
-    if (btn) {
-      const orig = btn.textContent;
-      btn.textContent = '&#10003; Saved';
-      btn.style.color = 'var(--accent)';
-      setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
-    }
+    notifyMenuUpdate();
   }
   function loadSavedLayout(idx) {
     const layouts = getSavedLayouts();
@@ -1344,41 +1116,15 @@
     location.reload();
   }
   function deleteSavedLayout(idx, event) {
-    event.stopPropagation();
+    if (event) event.stopPropagation();
     const layouts = getSavedLayouts();
     const layout = layouts[idx];
     if (!layout) return;
     if (!confirm(`Delete layout "${layout.name}"?`)) return;
     layouts.splice(idx, 1);
     setSavedLayouts(layouts);
-    renderLayoutsMenu();
+    notifyMenuUpdate();
   }
-  function toggleLayoutsMenu(e) {
-    if (e) e.stopPropagation();
-    const wrapper = document.getElementById('layouts-wrapper');
-    wrapper.classList.toggle('open');
-    if (wrapper.classList.contains('open')) renderLayoutsMenu();
-  }
-  function closeLayoutsMenu() {
-    document.getElementById('layouts-wrapper').classList.remove('open');
-  }
-  function renderLayoutsMenu() {
-    const menu = document.getElementById('layouts-menu');
-    const layouts = getSavedLayouts();
-    let html = `<div class="menu-action" onclick="saveCurrentAsLayout()">&#128190; Save current layout</div>`;
-    if (layouts.length === 0) {
-      html += '<div class="menu-item empty">No saved layouts yet</div>';
-    } else {
-      html += layouts.map((l, i) => `
-        <div class="menu-item" onclick="loadSavedLayout(${i})">
-          <span class="item-label">&#128194; ${escapeHtml(l.name)}</span>
-          <button class="item-action" onclick="deleteSavedLayout(${i}, event)" title="Delete">&#128465;</button>
-        </div>
-      `).join('');
-    }
-    menu.innerHTML = html;
-  }
-
   // ============ PANEL ACTIONS ============
   function reloadPanel(id) {
     const content = document.getElementById(`content-${id}`);
@@ -1486,21 +1232,22 @@
     });
   }
 
-  // ============ CLOCK ============
-  function updateClock() {
-    const n = new Date();
-    document.getElementById('clock').textContent =
-      `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
+  // ============ NATIVE MENU SYNC ============
+  // Sends current layouts + closed-panels state to main process so it can
+  // rebuild the native Layouts and "Reopen Closed Panel" menus dynamically.
+  function notifyMenuUpdate() {
+    if (!window.electronAPI) return;
+    const layouts = getSavedLayouts().map((l, i) => ({ name: l.name, index: i }));
+    const closedData = closedPanels.map((p, i) => ({ title: p.title, index: i }));
+    window.electronAPI.updateMenu({ layouts, closedPanels: closedData });
   }
-  setInterval(updateClock, 1000);
-  updateClock();
 
   // ============ SHORTCUTS ============
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reloadAll(); }
     if (e.ctrlKey && e.key === 'l') { e.preventDefault(); toggleLock(); }
     if (e.ctrlKey && e.key === ',') { e.preventDefault(); openSettings(); }
-    if (e.key === 'Escape') { closeAddModal(); cancelSettings(); closeClosedMenu(); }
+    if (e.key === 'Escape') { closeAddModal(); cancelSettings(); }
   });
 
   // ============ STARTUP ============
@@ -1509,6 +1256,7 @@
   bindSettingsControls();
   loadLayout();
   applySettings();
+  notifyMenuUpdate(); // seed native Layouts / Reopen menus with initial state
 </script>
 
 </body>
