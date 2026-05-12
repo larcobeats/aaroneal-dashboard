@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, shell } = require('electron');
+const { app, BrowserWindow, session, shell, Menu, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -6,9 +6,7 @@ const os = require('os');
 const http = require('http');
 
 // ─── Local HTTP server ────────────────────────────────────────────────────────
-// Serves the renderer folder at http://localhost:3847.
-// This gives us a real http://localhost origin so the Twitch player's
-// parent=localhost parameter validates correctly.
+// Serves renderer/ at http://localhost:3847 so Twitch player's parent=localhost works.
 
 const PORT = 3847;
 let localServer = null;
@@ -46,11 +44,7 @@ function startLocalServer() {
 }
 
 // ─── 7TV extension finder ─────────────────────────────────────────────────────
-// Searches common Chromium browser profiles for the 7TV Chrome extension.
-// Electron can load Chrome (MV2/MV3) extensions via session.loadExtension().
-// Firefox/Zen extensions (.xpi) are a different format and cannot be loaded here.
 
-// Stable and Nightly IDs — checked in order, first found wins
 const EXT_7TV_IDS = [
   'fphegifdehlodcepfkgofelcenelpedj', // 7TV Nightly
   'imenocelblhgehldidaghmgnchchnmoh', // 7TV Stable
@@ -98,9 +92,6 @@ function find7TVExtension() {
 }
 
 // ─── Header stripping ─────────────────────────────────────────────────────────
-// Removes X-Frame-Options and Content-Security-Policy from every response so
-// cross-origin iframes (Twitch, StreamElements, TikFinity, etc.) load freely.
-// Replaces the Firefox "Ignore X-Frame-Options" browser extension entirely.
 
 function setupHeaderStripping(ses) {
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -114,6 +105,146 @@ function setupHeaderStripping(ses) {
   });
 }
 
+// ─── Popup / window-open policy ───────────────────────────────────────────────
+// Auth flows (Twitch login, StreamElements OAuth, etc.) must open inside Electron.
+// Arbitrary external links (chat URLs, etc.) open in the default browser.
+
+const TRUSTED_AUTH_DOMAINS = [
+  'twitch.tv',
+  'streamelements.com',
+  'tikfinity.zerody.one',
+  'id.twitch.tv',
+  'passport.twitch.tv',
+];
+
+function isTrustedAuthDomain(url) {
+  try {
+    const host = new URL(url).hostname;
+    return TRUSTED_AUTH_DOMAINS.some(d => host === d || host.endsWith('.' + d));
+  } catch {
+    return false;
+  }
+}
+
+function applyWindowOpenHandler(wc) {
+  wc.setWindowOpenHandler(({ url }) => {
+    if (isTrustedAuthDomain(url)) {
+      // Open login/auth popups as real Electron windows so cookies work
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 600,
+          height: 750,
+          autoHideMenuBar: true,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+          },
+        },
+      };
+    }
+    // Everything else (external links from chat, etc.) → default browser
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+// ─── Native menu ─────────────────────────────────────────────────────────────
+
+function buildMenu(win) {
+  const js = (code) => () => win.webContents.executeJavaScript(code);
+
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        { label: 'Add Panel…', click: js('addPanelDialog()') },
+        { type: 'separator' },
+        { label: 'Reset to Default Layout', click: js('resetLayout()') },
+        { type: 'separator' },
+        { label: 'Quit', accelerator: 'Alt+F4', click: () => app.quit() },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Reload All Panels',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: js('reloadAll()'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Toggle Lock',
+          accelerator: 'CmdOrCtrl+L',
+          click: js('toggleLock()'),
+        },
+        {
+          label: 'Settings…',
+          accelerator: 'CmdOrCtrl+,',
+          click: js('openSettings()'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => win.webContents.toggleDevTools(),
+        },
+      ],
+    },
+    {
+      label: 'Layouts',
+      submenu: [
+        { label: 'Save Current Layout…', click: js('saveCurrentAsLayout()') },
+        { label: 'Open Layouts Menu', click: js('toggleLayoutsMenu()') },
+        { type: 'separator' },
+        { label: 'Reopen Closed Panel', click: js('toggleClosedMenu()') },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'close' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'View on GitHub',
+          click: () => shell.openExternal('https://github.com/larcobeats/aaroneal-dashboard'),
+        },
+        { type: 'separator' },
+        {
+          label: `Version ${app.getVersion()}`,
+          enabled: false,
+        },
+        {
+          label: 'Check for Updates',
+          click: () => autoUpdater.checkForUpdatesAndNotify(),
+        },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 // ─── Main window ──────────────────────────────────────────────────────────────
 
 async function createWindow() {
@@ -122,7 +253,6 @@ async function createWindow() {
   const ses = session.defaultSession;
   setupHeaderStripping(ses);
 
-  // Load 7TV Chrome extension if found in any installed Chromium browser
   const tvPath = find7TVExtension();
   if (tvPath) {
     try {
@@ -132,7 +262,7 @@ async function createWindow() {
       console.warn('[7TV] Failed to load:', err.message);
     }
   } else {
-    console.warn('[7TV] Not found in any Chrome/Edge/Brave profile. Install 7TV in Chrome or Edge first.');
+    console.warn('[7TV] Not found in any Chrome/Edge/Brave profile.');
   }
 
   const win = new BrowserWindow({
@@ -146,22 +276,26 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true,   // enables <webview> in renderer for 7TV-enabled chat
-      sandbox: false,     // required when webviewTag is true
+      webviewTag: true,
+      sandbox: false,
     },
   });
 
-  // Route any window.open() calls (pop-outs, external links) to default browser
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
+  buildMenu(win);
+
+  // Apply popup policy to the main window
+  applyWindowOpenHandler(win.webContents);
 
   win.loadURL(`http://localhost:${PORT}`);
 
-  // Auto-updater — checks GitHub Releases for newer versions on every launch
   autoUpdater.checkForUpdatesAndNotify();
 }
+
+// Apply popup policy to every webContents (covers webviews and child windows)
+app.on('web-contents-created', (_e, wc) => {
+  setupHeaderStripping(wc.session);
+  applyWindowOpenHandler(wc);
+});
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
