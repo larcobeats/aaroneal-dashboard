@@ -621,8 +621,8 @@
     'activity-feed': {
       title: 'Activity Feed',
       url: `https://streamelements.com/dashboard/6214670f53678f6f0d07d53d/activity/popout`,
-      w: 4, h: 6,
-      type: 'webview'  // webview so OAuth postMessage callback works (window.opener chain intact)
+      w: 4, h: 6
+      // iframe (default) — main window now uses persist:main so auth cookies are shared
     },
     'chat': {
       title: 'Chat',
@@ -958,6 +958,17 @@
     const ro = new ResizeObserver(syncHeight);
     ro.observe(body);
     _webviewObservers.set(id, ro);
+
+    // After the guest page finishes loading, do a 1px height toggle so Electron
+    // sends a fresh resize IPC to the guest renderer. This covers the case where
+    // the renderer locked in a stale viewport before style.height was applied.
+    wv.addEventListener('dom-ready', () => {
+      const h = body.getBoundingClientRect().height;
+      if (h > 0) {
+        wv.style.height = (h - 1) + 'px';
+        requestAnimationFrame(() => { wv.style.height = h + 'px'; });
+      }
+    }, { once: true });
 
     // rAF retry loop: GridStack may not have applied pixel dimensions yet at
     // addWidget time (especially for panels restored from saved layout on startup).

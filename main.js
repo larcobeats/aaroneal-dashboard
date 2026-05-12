@@ -306,6 +306,9 @@ async function createWindow() {
       nodeIntegration: false,
       webviewTag: true,
       sandbox: false,
+      // Use persist:main so iframes in the main window share auth cookies
+      // with the chat webview — StreamElements login carries across both
+      partition: 'persist:main',
     },
   });
 
