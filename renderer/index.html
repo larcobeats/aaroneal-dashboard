@@ -221,13 +221,16 @@
     display: block;
   }
 
-  /* webview needs absolute positioning so Electron resolves a real pixel
-     height for the Chromium renderer — flex:1 alone is insufficient */
+  /* webview: absolutely positioned so the JS ResizeObserver can stamp an
+     explicit pixel height. height is intentionally NOT set here — it is
+     written exclusively via inline style by attachWebviewObserver() so
+     Electron's guest renderer receives an unambiguous pixel value. */
   .panel-body webview {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* height set by JS — do not add height here */
     border: 0;
     display: block;
   }
@@ -934,15 +937,43 @@
     const wv   = content.querySelector('webview');
     if (!body || !wv) return;
 
-    const sync = () => {
+    // Sync the webview's inline height to the panel-body's current pixel height.
+    // Called by both the ResizeObserver (future resizes) and the rAF init loop.
+    const syncHeight = () => {
       const h = body.getBoundingClientRect().height;
       if (h > 0) wv.style.height = h + 'px';
+      return h;
     };
 
-    sync(); // set immediately on attach
-    const ro = new ResizeObserver(sync);
+    // Activate the webview src once we have a real height.
+    // Using data-src in the HTML delays loading until this point so the
+    // guest renderer process starts with the correct viewport size.
+    const activateSrc = () => {
+      if (wv.hasAttribute('src')) return; // already navigated
+      const src = wv.getAttribute('data-src');
+      if (src) wv.setAttribute('src', src);
+    };
+
+    // ResizeObserver keeps height correct on every future GridStack / window resize
+    const ro = new ResizeObserver(syncHeight);
     ro.observe(body);
     _webviewObservers.set(id, ro);
+
+    // rAF retry loop: GridStack may not have applied pixel dimensions yet at
+    // addWidget time (especially for panels restored from saved layout on startup).
+    // Retry each frame until we get h > 0, then activate the src.
+    let attempts = 0;
+    const tryInit = () => {
+      const h = syncHeight();
+      if (h > 0) {
+        activateSrc();
+      } else if (++attempts < 20) {
+        requestAnimationFrame(tryInit);
+      } else {
+        activateSrc(); // fallback: load even if height is still 0
+      }
+    };
+    requestAnimationFrame(tryInit);
   }
 
   function detachWebviewObserver(id) {
@@ -969,7 +1000,7 @@
           </div>
         </div>
         <div class="panel-body">
-          <webview src="${escapeHtml(url)}" allowpopups partition="persist:main"></webview>
+          <webview data-src="${escapeHtml(url)}" allowpopups partition="persist:main"></webview>
         </div>
       `;
     }
@@ -1208,7 +1239,10 @@
     const content = document.getElementById(`content-${id}`);
     if (content) {
       content.querySelectorAll('iframe').forEach(f  => { f.src = raw; });
-      content.querySelectorAll('webview').forEach(wv => { wv.src = raw; });
+      content.querySelectorAll('webview').forEach(wv => {
+        wv.setAttribute('data-src', raw); // keep data-src in sync
+        wv.src = raw;                     // navigate to new URL
+      });
     }
     saveLayout();
   }
