@@ -916,10 +916,39 @@
     grid.on('resizestart', () => document.body.classList.add('dragging'));
     grid.on('resizestop',  () => { document.body.classList.remove('dragging'); saveLayout(); });
   }
-  // Note: the previous ResizeObserver width-nudge approach was removed.
-  // Root cause of cropping was position:absolute on webview inside a flex
-  // parent — fixed by switching panel-body to display:flex so the child
-  // fills via flex:1 rather than inset:0.  No JS repaint hack needed.
+
+  // ── Webview viewport fix ──────────────────────────────────────────────────
+  // Electron's <webview> renderer process needs an explicit pixel height —
+  // CSS flex:1 and even position:absolute+inset:0 don't reliably propagate
+  // a concrete dimension to the guest renderer, so the page viewport stays
+  // small and only the top slice of content appears.  The fix: observe each
+  // .panel-body with a ResizeObserver and stamp its exact clientHeight onto
+  // the webview via an inline style, which Electron can unambiguously read.
+
+  const _webviewObservers = new Map(); // panelId → ResizeObserver
+
+  function attachWebviewObserver(id) {
+    const content = document.getElementById(`content-${id}`);
+    if (!content) return;
+    const body = content.querySelector('.panel-body');
+    const wv   = content.querySelector('webview');
+    if (!body || !wv) return;
+
+    const sync = () => {
+      const h = body.getBoundingClientRect().height;
+      if (h > 0) wv.style.height = h + 'px';
+    };
+
+    sync(); // set immediately on attach
+    const ro = new ResizeObserver(sync);
+    ro.observe(body);
+    _webviewObservers.set(id, ro);
+  }
+
+  function detachWebviewObserver(id) {
+    const ro = _webviewObservers.get(id);
+    if (ro) { ro.disconnect(); _webviewObservers.delete(id); }
+  }
 
   // ============ PANEL HTML ============
   function buildPanelHTML(id, config) {
@@ -1004,6 +1033,7 @@
 
     grid.addWidget(widget);
     panels[id] = config;
+    if (config.type === 'webview') attachWebviewObserver(id);
     saveLayout();
   }
 
@@ -1013,6 +1043,7 @@
     const node = grid.engine.nodes.find(n => n.id === id);
     if (!node) return;
 
+    detachWebviewObserver(id);
     closedPanels.push({ ...config, w: node.w, h: node.h });
     grid.removeWidget(node.el, true);
     delete panels[id];
