@@ -104,25 +104,27 @@
     z-index: 10;
   }
 
-  /* SE corner: subtle triangle indicator, hidden unless panel is hovered */
-  .grid-stack-item > .ui-resizable-se {
-    background: transparent;
-    bottom: 0;
-    right: 0;
-    cursor: se-resize;
-    transition: background 0.15s ease;
-  }
-  .grid-stack-item:not(body.locked *):hover > .ui-resizable-se {
+  /* Explicit cursors for every resize direction */
+  .grid-stack-item > .ui-resizable-n  { cursor: n-resize; }
+  .grid-stack-item > .ui-resizable-s  { cursor: s-resize; }
+  .grid-stack-item > .ui-resizable-e  { cursor: e-resize; }
+  .grid-stack-item > .ui-resizable-w  { cursor: w-resize; }
+  .grid-stack-item > .ui-resizable-ne { cursor: ne-resize; }
+  .grid-stack-item > .ui-resizable-nw { cursor: nw-resize; }
+  .grid-stack-item > .ui-resizable-se { cursor: se-resize; bottom: 0; right: 0; transition: background 0.15s ease; }
+  .grid-stack-item > .ui-resizable-sw { cursor: sw-resize; }
+
+  /* Corner/edge visual hints — only when NOT in locked mode */
+  .grid-stack-item:hover > .ui-resizable-se {
     background: linear-gradient(135deg, transparent 50%, rgba(170, 212, 255, 0.25) 50%);
   }
-
-  /* Edge handles: thin accent stripe on hover */
-  .grid-stack-item:not(body.locked *):hover > .ui-resizable-e {
+  .grid-stack-item:hover > .ui-resizable-e {
     background: linear-gradient(to right, transparent 40%, rgba(170, 212, 255, 0.12));
   }
-  .grid-stack-item:not(body.locked *):hover > .ui-resizable-s {
+  .grid-stack-item:hover > .ui-resizable-s {
     background: linear-gradient(to bottom, transparent 40%, rgba(170, 212, 255, 0.12));
   }
+  body.locked .grid-stack-item > .ui-resizable-handle { display: none !important; }
 
   /* ===== PANEL HEADER ===== */
   .panel-header {
@@ -194,27 +196,26 @@
     background: rgba(255, 107, 107, 0.1);
   }
 
+  /* panel-body uses flex so child webview/iframe fills via flex:1 — no
+     position:absolute dependency, which was the root cause of cropping when
+     the parent height was determined by flex rather than a pixel value. */
   .panel-body {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
-    position: relative;
     background: var(--bg);
-    display: block;
+    display: flex;
+    flex-direction: column;
   }
 
   .panel-body iframe,
   .panel-body webview {
-    position: absolute;
-    inset: 0;
-    width: 100% !important;
-    height: 100% !important;
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
     border: 0;
     display: block;
-    /* GPU compositing layer prevents Electron webview repaint glitches on resize */
-    transform: translateZ(0);
-    will-change: transform;
   }
 
   /* ===== GRIDSTACK BEHAVIOR ===== */
@@ -406,7 +407,6 @@
   }
 
   body.locked .panel-header { cursor: default; }
-  body.locked .grid-stack-item > .ui-resizable-handle { display: none !important; }
 
 
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -524,6 +524,71 @@
   </div>
 </div>
 
+<!-- UPDATE STATUS MODAL -->
+<div class="modal-overlay" id="update-modal">
+  <div class="modal" style="width:420px;">
+    <div class="modal-header">
+      <span id="update-modal-title">Updates</span>
+      <button onclick="closeUpdateModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+    <div class="modal-body" id="update-modal-body" style="padding:24px 16px;text-align:center;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+    </div>
+    <div class="modal-footer" id="update-modal-footer" style="justify-content:center;"></div>
+  </div>
+</div>
+
+<!-- SAVE LAYOUT MODAL -->
+<div class="modal-overlay" id="save-layout-modal">
+  <div class="modal" style="width:400px;">
+    <div class="modal-header">
+      <span>Save Current Layout</span>
+      <button onclick="closeSaveLayoutModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <label>Layout Name</label>
+      <input type="text" id="save-layout-name" placeholder="e.g. Stream Setup, Gaming View…"
+             onkeydown="if(event.key==='Enter') confirmSaveLayout()">
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeSaveLayoutModal()">Cancel</button>
+      <button class="primary" onclick="confirmSaveLayout()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT URL MODAL -->
+<div class="modal-overlay" id="edit-url-modal">
+  <div class="modal" style="width:520px;">
+    <div class="modal-header">
+      <span>Edit Panel URL</span>
+      <button onclick="closeEditUrlModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <label>URL</label>
+      <input type="text" id="edit-url-input" placeholder="https://…"
+             onkeydown="if(event.key==='Enter') confirmEditUrl()">
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeEditUrlModal()">Cancel</button>
+      <button class="primary" onclick="confirmEditUrl()">Update Panel</button>
+    </div>
+  </div>
+</div>
+
+<!-- GENERIC CONFIRM MODAL -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal" style="width:400px;">
+    <div class="modal-header">
+      <span id="confirm-modal-title">Confirm</span>
+    </div>
+    <div class="modal-body" id="confirm-modal-body" style="padding:20px 16px;"></div>
+    <div class="modal-footer">
+      <button onclick="resolveConfirm(false)">Cancel</button>
+      <button class="primary" id="confirm-modal-ok" onclick="resolveConfirm(true)">OK</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
 
 <script>
@@ -593,7 +658,7 @@
     rows: 12,
     gap: 1,
     float: true,
-    animate: true
+    animate: false  // animations during drag cause visible lag; off by default
   };
 
   // ============ STATE ============
@@ -717,8 +782,10 @@
     });
   }
 
-  function resetSettings() {
-    if (!confirm('Reset settings to defaults? Layout panels stay where they are.')) return;
+  async function resetSettings() {
+    const ok = await showConfirm('Reset Settings',
+      'Reset all settings to defaults? Panel positions are kept.', 'Reset');
+    if (!ok) return;
     settings = { ...DEFAULT_SETTINGS };
     saveSettings();
     location.reload();
@@ -832,39 +899,13 @@
   // lets them overlap or snap as needed without forced coupling.
 
   function setupResizeHandlers() {
-    grid.on('resizestart', () => {
-      document.body.classList.add('dragging');
-    });
-
-    grid.on('resizestop', (_event, el) => {
-      document.body.classList.remove('dragging');
-      // Fix: after GridStack updates the cell dimensions the Electron webview
-      // compositor doesn't always re-composite the layer, leaving content
-      // cropped at the top.  Briefly nudging width by 1 px forces a repaint
-      // without reloading the page.
-      el.querySelectorAll('webview').forEach(wv => {
-        if (!wv.isConnected) return;
-        const orig = wv.style.width;
-        wv.style.width = 'calc(100% - 1px)';
-        requestAnimationFrame(() => { wv.style.width = orig; });
-      });
-      saveLayout();
-    });
+    grid.on('resizestart', () => document.body.classList.add('dragging'));
+    grid.on('resizestop',  () => { document.body.classList.remove('dragging'); saveLayout(); });
   }
-
-  // ============ PANEL RESIZE OBSERVER ============
-  // Watches each panel-body independently so the repaint fix also fires on
-  // window resize (not just GridStack drag-resize).
-  const panelResizeObserver = new ResizeObserver(entries => {
-    for (const entry of entries) {
-      entry.target.querySelectorAll('webview').forEach(wv => {
-        if (!wv.isConnected) return;
-        const orig = wv.style.width;
-        wv.style.width = 'calc(100% - 1px)';
-        requestAnimationFrame(() => { wv.style.width = orig; });
-      });
-    }
-  });
+  // Note: the previous ResizeObserver width-nudge approach was removed.
+  // Root cause of cropping was position:absolute on webview inside a flex
+  // parent — fixed by switching panel-body to display:flex so the child
+  // fills via flex:1 rather than inset:0.  No JS repaint hack needed.
 
   // ============ PANEL HTML ============
   function buildPanelHTML(id, config) {
@@ -949,17 +990,6 @@
 
     grid.addWidget(widget);
     panels[id] = config;
-    // Observe panel body for size changes so webviews repaint correctly.
-    // Root cause of cropping: Electron's webview process doesn't always
-    // recalculate its visible rect after the containing element is resized
-    // by GridStack.  Observing the panel-body and nudging the webview's
-    // size by 1 px then back triggers Chromium to re-composite the layer
-    // without a full reload.
-    requestAnimationFrame(() => {
-      const body = document.querySelector(`#content-${id} .panel-body`);
-      if (body) panelResizeObserver.observe(body);
-    });
-
     saveLayout();
   }
 
@@ -1029,38 +1059,56 @@
     return { panels: nodes, columns: settings.columns, rows: settings.rows, gap: settings.gap, savedAt: Date.now() };
   }
   function saveCurrentAsLayout() {
-    const name = prompt('Layout name:', '');
-    if (!name || !name.trim()) return;
-    const trimmedName = name.trim();
+    // Open modal instead of prompt() — prompt() silently fails when called
+    // via executeJavaScript() from the native menu in Electron 29.
+    document.getElementById('save-layout-name').value = '';
+    document.getElementById('save-layout-modal').classList.add('show');
+    document.body.classList.add('modal-open');
+    setTimeout(() => document.getElementById('save-layout-name').focus(), 50);
+  }
+  function closeSaveLayoutModal() {
+    document.getElementById('save-layout-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+  }
+  async function confirmSaveLayout() {
+    const name = document.getElementById('save-layout-name').value.trim();
+    if (!name) return;
+    closeSaveLayoutModal();
     const layouts = getSavedLayouts();
-    const existingIdx = layouts.findIndex(l => l.name === trimmedName);
+    const existingIdx = layouts.findIndex(l => l.name === name);
     if (existingIdx >= 0) {
-      if (!confirm(`A layout named "${trimmedName}" already exists. Overwrite it?`)) return;
+      const ok = await showConfirm('Overwrite Layout',
+        `A layout named "${name}" already exists. Overwrite it?`, 'Overwrite');
+      if (!ok) return;
       layouts.splice(existingIdx, 1);
     }
     const captured = captureCurrentLayout();
     if (!captured) return;
-    layouts.push({ name: trimmedName, ...captured });
+    layouts.push({ name, ...captured });
     setSavedLayouts(layouts);
     notifyMenuUpdate();
   }
-  function loadSavedLayout(idx) {
+  async function loadSavedLayout(idx) {
     const layouts = getSavedLayouts();
     const layout = layouts[idx];
     if (!layout) return;
-    if (!confirm(`Load layout "${layout.name}"? Current layout will be replaced.`)) return;
-    const newSettings = { ...settings, columns: layout.columns, rows: layout.rows, gap: layout.gap !== undefined ? layout.gap : settings.gap };
+    const ok = await showConfirm('Load Layout',
+      `Load "${layout.name}"? Your current panel positions will be replaced.`, 'Load');
+    if (!ok) return;
+    const newSettings = { ...settings, columns: layout.columns, rows: layout.rows,
+      gap: layout.gap !== undefined ? layout.gap : settings.gap };
     localStorage.setItem('dashboard-settings', JSON.stringify(newSettings));
     localStorage.setItem('dashboard-layout', JSON.stringify(layout.panels));
     localStorage.setItem('dashboard-version', String(LAYOUT_VERSION));
     location.reload();
   }
-  function deleteSavedLayout(idx, event) {
+  async function deleteSavedLayout(idx, event) {
     if (event) event.stopPropagation();
     const layouts = getSavedLayouts();
     const layout = layouts[idx];
     if (!layout) return;
-    if (!confirm(`Delete layout "${layout.name}"?`)) return;
+    const ok = await showConfirm('Delete Layout', `Delete "${layout.name}"?`, 'Delete');
+    if (!ok) return;
     layouts.splice(idx, 1);
     setSavedLayouts(layouts);
     notifyMenuUpdate();
@@ -1085,19 +1133,37 @@
     muteIcon.textContent = isMuted ? '&#128266;' : '&#128263;';
   }
 
+  let _editingPanelId = null;
   function editPanelUrl(id) {
     const config = panels[id];
     if (!config) return;
-    const input = prompt('Panel URL:', config.url);
-    if (!input || !input.trim()) return;
-    const newUrl = input.trim();
-    config.url = newUrl;
-    // Redirect the live embed without rebuilding the whole panel
-    // (preserves panel position, size, and any loaded session state)
+    _editingPanelId = id;
+    document.getElementById('edit-url-input').value = config.url;
+    document.getElementById('edit-url-modal').classList.add('show');
+    document.body.classList.add('modal-open');
+    setTimeout(() => {
+      const inp = document.getElementById('edit-url-input');
+      inp.focus(); inp.select();
+    }, 50);
+  }
+  function closeEditUrlModal() {
+    _editingPanelId = null;
+    document.getElementById('edit-url-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+  }
+  function confirmEditUrl() {
+    const raw = document.getElementById('edit-url-input').value.trim();
+    if (!raw) return;
+    // Basic URL validation
+    try { new URL(raw); } catch { alert('Please enter a valid URL starting with https://'); return; }
+    closeEditUrlModal();
+    const id = _editingPanelId;
+    if (!id || !panels[id]) return;
+    panels[id].url = raw;
     const content = document.getElementById(`content-${id}`);
     if (content) {
-      content.querySelectorAll('iframe').forEach(f  => { f.src = newUrl; });
-      content.querySelectorAll('webview').forEach(wv => { wv.src = newUrl; });
+      content.querySelectorAll('iframe').forEach(f  => { f.src = raw; });
+      content.querySelectorAll('webview').forEach(wv => { wv.src = raw; });
     }
     saveLayout();
   }
@@ -1110,15 +1176,16 @@
   function toggleLock() {
     isLocked = !isLocked;
     document.body.classList.toggle('locked', isLocked);
-    const btn = document.getElementById('lock-btn');
-    btn.textContent = isLocked ? '&#128274; Locked' : '&#128275; Unlocked';
+    // Update all panels' move/resize constraints
     grid.engine.nodes.forEach(node => {
       grid.update(node.el, { noMove: isLocked, noResize: isLocked, locked: isLocked });
     });
   }
 
-  function resetLayout() {
-    if (!confirm('Reset to default layout? This will close any custom panels, clear saved positions, and reset grid columns/rows to defaults.')) return;
+  async function resetLayout() {
+    const ok = await showConfirm('Reset Layout',
+      'Reset to the default layout? Custom panels will be removed and positions cleared.', 'Reset');
+    if (!ok) return;
     localStorage.removeItem('dashboard-layout');
     localStorage.removeItem('dashboard-closed');
     localStorage.removeItem('dashboard-version');
@@ -1199,6 +1266,84 @@
     });
   }
 
+  // ============ CONFIRM MODAL ============
+  // Replaces window.confirm() throughout — confirm() silently returns false
+  // when called via executeJavaScript() from the native menu in Electron 29.
+  let _confirmResolve = null;
+  function showConfirm(title, message, okLabel = 'OK') {
+    return new Promise(resolve => {
+      _confirmResolve = resolve;
+      document.getElementById('confirm-modal-title').textContent = title;
+      document.getElementById('confirm-modal-body').textContent = message;
+      document.getElementById('confirm-modal-ok').textContent = okLabel;
+      document.getElementById('confirm-modal').classList.add('show');
+      document.body.classList.add('modal-open');
+    });
+  }
+  function resolveConfirm(result) {
+    document.getElementById('confirm-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+    if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+  }
+
+  // ============ UPDATE MODAL ============
+  function closeUpdateModal() {
+    document.getElementById('update-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+  }
+  function showUpdateStatus(payload) {
+    const modal  = document.getElementById('update-modal');
+    const body   = document.getElementById('update-modal-body');
+    const footer = document.getElementById('update-modal-footer');
+    const title  = document.getElementById('update-modal-title');
+
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+    footer.innerHTML = '';
+
+    switch (payload.state) {
+      case 'checking':
+        title.textContent = 'Checking for Updates';
+        body.innerHTML = '<span style="color:var(--text-dim)">Checking GitHub releases…</span>';
+        break;
+      case 'available':
+        title.textContent = 'Update Available';
+        body.innerHTML = `<span>Version <strong style="color:var(--accent)">${payload.version}</strong> is available.</span>
+          <span style="color:var(--text-dim);font-size:10px;">The update will download automatically in the background.</span>`;
+        break;
+      case 'not-available':
+        title.textContent = 'Up to Date';
+        body.innerHTML = `<span>You're running the latest version.</span>
+          <span style="color:var(--text-dim);font-size:10px;">(${payload.version})</span>`;
+        footer.innerHTML = `<button class="primary" onclick="closeUpdateModal()">Close</button>`;
+        break;
+      case 'downloading': {
+        const pct = payload.percent || 0;
+        title.textContent = 'Downloading Update';
+        body.innerHTML = `
+          <span>Downloading… ${pct}%</span>
+          <div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:4px;">
+            <div style="width:${pct}%;height:100%;background:var(--accent);transition:width 0.3s ease;"></div>
+          </div>`;
+        break;
+      }
+      case 'ready':
+        title.textContent = 'Ready to Install';
+        body.innerHTML = `<span>Version <strong style="color:var(--accent)">${payload.version}</strong> has been downloaded.</span>
+          <span style="color:var(--text-dim);font-size:10px;">The app will restart to apply the update.</span>`;
+        footer.innerHTML = `
+          <button onclick="closeUpdateModal()">Later</button>
+          <button class="primary" onclick="window.electronAPI.installUpdate()">Restart &amp; Install</button>`;
+        break;
+      case 'error':
+        title.textContent = 'Update Error';
+        body.innerHTML = `<span style="color:#ff6b6b">Update check failed.</span>
+          <span style="color:var(--text-dim);font-size:10px;word-break:break-all;">${payload.message || 'Unknown error'}</span>`;
+        footer.innerHTML = `<button class="primary" onclick="closeUpdateModal()">Close</button>`;
+        break;
+    }
+  }
+
   // ============ NATIVE MENU SYNC ============
   // Sends current layouts + closed-panels state to main process so it can
   // rebuild the native Layouts and "Reopen Closed Panel" menus dynamically.
@@ -1214,7 +1359,11 @@
     if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reloadAll(); }
     if (e.ctrlKey && e.key === 'l') { e.preventDefault(); toggleLock(); }
     if (e.ctrlKey && e.key === ',') { e.preventDefault(); openSettings(); }
-    if (e.key === 'Escape') { closeAddModal(); cancelSettings(); }
+    if (e.key === 'Escape') {
+      closeAddModal(); cancelSettings(); closeEditUrlModal();
+      closeSaveLayoutModal(); closeUpdateModal();
+      resolveConfirm(false);
+    }
   });
 
   // ============ STARTUP ============
@@ -1223,7 +1372,12 @@
   bindSettingsControls();
   loadLayout();
   applySettings();
-  notifyMenuUpdate(); // seed native Layouts / Reopen menus with initial state
+  notifyMenuUpdate();
+
+  // Wire update events from main process → update modal
+  if (window.electronAPI) {
+    window.electronAPI.onUpdateStatus(showUpdateStatus);
+  }
 </script>
 
 </body>

@@ -233,7 +233,14 @@ function buildMenu() {
           click: () => shell.openExternal('https://github.com/larcobeats/aaroneal-dashboard') },
         { type: 'separator' },
         { label: `Version ${app.getVersion()}`, enabled: false },
-        { label: 'Check for Updates', click: () => autoUpdater.checkForUpdatesAndNotify() },
+        { label: 'Check for Updates', click: () => {
+            // Show the renderer's update modal immediately, then kick off the check.
+            // autoUpdater events will update the modal state as they fire.
+            sendUpdateStatus({ state: 'checking' });
+            autoUpdater.checkForUpdates().catch(err =>
+              sendUpdateStatus({ state: 'error', message: err.message })
+            );
+          }},
       ],
     },
   ];
@@ -246,6 +253,25 @@ ipcMain.on('menu-data', (_e, data) => {
   menuData = data;
   buildMenu();
 });
+
+// ─── Auto-updater → renderer UI ───────────────────────────────────────────────
+// All update lifecycle events are forwarded to the renderer as a single
+// 'update-status' channel so the renderer can drive its own modal UI.
+// Root cause of the broken "Check for Updates" button: these listeners were
+// completely absent — events fired into /dev/null and nothing reached the UI.
+
+function sendUpdateStatus(payload) {
+  mainWin?.webContents.send('update-status', payload);
+}
+
+autoUpdater.on('checking-for-update',  ()     => sendUpdateStatus({ state: 'checking' }));
+autoUpdater.on('update-available',     info   => sendUpdateStatus({ state: 'available',     version: info.version }));
+autoUpdater.on('update-not-available', info   => sendUpdateStatus({ state: 'not-available', version: info.version }));
+autoUpdater.on('download-progress',    prog   => sendUpdateStatus({ state: 'downloading',   percent: Math.round(prog.percent) }));
+autoUpdater.on('update-downloaded',    info   => sendUpdateStatus({ state: 'ready',         version: info.version }));
+autoUpdater.on('error',                err    => sendUpdateStatus({ state: 'error',         message: err.message }));
+
+ipcMain.on('install-update', () => autoUpdater.quitAndInstall());
 
 // ─── Main window ──────────────────────────────────────────────────────────────
 
@@ -286,7 +312,8 @@ async function createWindow() {
   buildMenu();
   applyWindowOpenHandler(mainWin.webContents);
   mainWin.loadURL(`http://localhost:${PORT}`);
-  autoUpdater.checkForUpdatesAndNotify();
+  // Silent background check on launch — events flow to renderer via sendUpdateStatus
+  autoUpdater.checkForUpdates().catch(() => { /* ignore startup check failures (dev mode, no internet) */ });
 }
 
 // Apply popup policy + header stripping to every webContents (covers webviews & child windows)
