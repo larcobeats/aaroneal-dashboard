@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aaroneal Stream Dashboard</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
+
+<style>
+  :root {
+    --bg: #0e0e10;
+    --panel: #18181b;
+    --panel-2: #1f1f23;
+    --border: #2a2a2e;
+    --text: #efeff1;
+    --text-dim: #adadb8;
+    --accent: #aad4ff;
+    --accent-glow: rgba(170, 212, 255, 0.4);
+    --header-h: 24px;
+    --gap: 1px;
+    --toolbar-h: 32px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+    font-size: 11px;
+  }
+
+  /* ===== TOP TOOLBAR (auto-hide) ===== */
+  .toolbar-zone {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    z-index: 1000;
+  }
+
+  .toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--toolbar-h);
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+    z-index: 1001;
+    transform: translateY(-100%);
+    transition: transform 0.18s ease;
+  }
+
+  .toolbar-zone:hover ~ .toolbar,
+  .toolbar:hover,
+  body.toolbar-pinned .toolbar,
+  body.modal-open .toolbar {
+    transform: translateY(0);
+  }
+
+  .toolbar .brand {
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .toolbar .brand .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+    animation: pulse 2s infinite;
+  }
+
+  .toolbar button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 3px 10px;
+    font-size: 10px;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .toolbar button:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(170, 212, 255, 0.05);
+  }
+
+  .toolbar .spacer { flex: 1; }
+
+  .toolbar .clock {
+    color: var(--text-dim);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    margin-left: 8px;
+  }
+
+  /* ===== GRID ===== */
+  .grid-wrapper {
+    height: 100vh;
+    width: 100vw;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--bg);
+    position: relative;
+  }
+
+  .grid-stack {
+    background: var(--bg);
+    width: 100%;
+    min-height: 100%;
+  }
+
+  .grid-stack-item-content {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .grid-stack-item-content,
+  .grid-stack-item-content > * {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* HIDE GRIDSTACK RESIZE HANDLES */
+  .grid-stack-item > .ui-resizable-handle {
+    background-image: none !important;
+    background: transparent !important;
+  }
+  .grid-stack-item > .ui-resizable-se,
+  .grid-stack-item > .ui-resizable-sw,
+  .grid-stack-item > .ui-resizable-ne,
+  .grid-stack-item > .ui-resizable-nw {
+    background-image: none !important;
+    color: transparent !important;
+    font-size: 0 !important;
+  }
+  .grid-stack-item > .ui-resizable-se::after,
+  .grid-stack-item > .ui-resizable-sw::after,
+  .grid-stack-item > .ui-resizable-ne::after,
+  .grid-stack-item > .ui-resizable-nw::after {
+    display: none !important;
+  }
+
+  .grid-stack-item > .ui-resizable-e,
+  .grid-stack-item > .ui-resizable-w { width: 6px; }
+  .grid-stack-item > .ui-resizable-n,
+  .grid-stack-item > .ui-resizable-s { height: 6px; }
+  .grid-stack-item > .ui-resizable-se,
+  .grid-stack-item > .ui-resizable-sw,
+  .grid-stack-item > .ui-resizable-ne,
+  .grid-stack-item > .ui-resizable-nw {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* ===== PANEL HEADER ===== */
+  .panel-header {
+    height: var(--header-h);
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    cursor: move;
+    user-select: none;
+  }
+
+  .panel-header .title-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .panel-header .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+    flex-shrink: 0;
+  }
+
+  .panel-header .title-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .panel-header .actions {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .panel-header button {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 1px 6px;
+    font-size: 11px;
+    border-radius: 2px;
+    transition: all 0.1s ease;
+    font-family: inherit;
+    line-height: 1;
+  }
+
+  .panel-header button:hover {
+    color: var(--accent);
+    background: rgba(170, 212, 255, 0.1);
+  }
+
+  .panel-header button.close-btn:hover {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+  }
+
+  .panel-body {
+    flex: 1 1 0;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg);
+    display: block;
+  }
+
+  .panel-body iframe,
+  .panel-body webview {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    border: 0;
+    display: block;
+  }
+
+  /* ===== GRIDSTACK BEHAVIOR ===== */
+  body.dragging iframe,
+  body.dragging webview { pointer-events: none !important; }
+  body.dragging * { user-select: none !important; }
+
+  .grid-stack-item.ui-draggable-dragging,
+  .grid-stack-item.ui-resizable-resizing {
+    opacity: 0.85;
+    z-index: 1000;
+  }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+  }
+
+  .modal-overlay.show { display: flex; }
+
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: 480px;
+    max-width: 90vw;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    padding: 12px 16px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .modal-body label {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    margin-top: 14px;
+  }
+  .modal-body label:first-of-type { margin-top: 0; }
+
+  .modal-body input[type="text"],
+  .modal-body input[type="number"],
+  .modal-body select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 11px;
+  }
+
+  .modal-body input:focus,
+  .modal-body select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .modal-body input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .range-row input[type="range"] { flex: 1; }
+  .range-row .range-value {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    min-width: 40px;
+    text-align: right;
+    font-size: 11px;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  .checkbox-row input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .checkbox-row label {
+    margin: 0;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+    font-size: 11px;
+  }
+
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .preset-btn {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 10px;
+    font-family: inherit;
+    text-align: left;
+    transition: all 0.15s ease;
+  }
+
+  .preset-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .modal-footer {
+    padding: 12px 16px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .modal-footer button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .modal-footer button.primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+
+  .modal-footer button:hover { opacity: 0.85; }
+
+  /* ===== CLOSED PANELS DROPDOWN ===== */
+  .closed-panels { position: relative; }
+
+  .closed-panels .menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    min-width: 220px;
+    display: none;
+    flex-direction: column;
+    z-index: 1002;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .closed-panels.open .menu { display: flex; }
+
+  .closed-panels .menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    transition: all 0.1s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .closed-panels .menu-item:last-child { border-bottom: 0; }
+  .closed-panels .menu-item:hover { background: var(--panel-2); color: var(--accent); }
+  .closed-panels .menu-item.empty { color: var(--text-dim); cursor: default; }
+  .closed-panels .menu-item.empty:hover { background: transparent; color: var(--text-dim); }
+
+  .closed-panels .menu-item .item-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .closed-panels .menu-item .item-action {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 11px;
+    border-radius: 2px;
+    transition: all 0.1s ease;
+    flex-shrink: 0;
+  }
+
+  .closed-panels .menu-item .item-action:hover {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+    border-color: #ff6b6b;
+  }
+
+  .closed-panels .menu-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0;
+  }
+
+  .closed-panels .menu-action {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    transition: all 0.1s ease;
+    font-weight: 600;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .closed-panels .menu-action:hover {
+    background: var(--panel-2);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  body.locked .panel-header { cursor: default; }
+  body.locked .grid-stack-item > .ui-resizable-handle { display: none !important; }
+
+  .grid-stack-item:hover > .ui-resizable-se {
+    background: linear-gradient(135deg, transparent 50%, rgba(170, 212, 255, 0.15) 50%);
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a3e; }
+
+  .modal-body hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 18px 0 4px;
+  }
+
+  .modal-body .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    font-weight: 700;
+    margin-top: 8px;
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP TOOLBAR -->
+<div class="toolbar-zone"></div>
+<div class="toolbar" id="toolbar">
+  <div class="brand">
+    <span class="live-dot"></span>
+    <span>AARONEAL</span>
+  </div>
+  <button onclick="addPanelDialog()" title="Add a new panel">+ Add Panel</button>
+  <div class="closed-panels" id="closed-panels-wrapper">
+    <button onclick="toggleClosedMenu(event)">&#8635; Reopen</button>
+    <div class="menu" id="closed-menu"></div>
+  </div>
+  <div class="closed-panels" id="layouts-wrapper">
+    <button onclick="toggleLayoutsMenu(event)">&#128193; Layouts</button>
+    <div class="menu" id="layouts-menu"></div>
+  </div>
+  <button onclick="toggleLock()" id="lock-btn">&#128275; Unlocked</button>
+  <button onclick="reloadAll()">&#8635; Reload All</button>
+  <button onclick="openSettings()" title="Settings">&#9881; Settings</button>
+  <button onclick="resetLayout()" title="Reset to default layout">&#8962; Reset</button>
+  <div class="spacer"></div>
+  <span class="clock" id="clock"></span>
+</div>
+
+<!-- GRID -->
+<div class="grid-wrapper" id="grid-wrapper">
+  <div class="grid-stack" id="grid"></div>
+</div>
+
+<!-- ADD PANEL MODAL -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Add Panel</span>
+      <button onclick="closeAddModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <label>Quick Presets</label>
+      <div class="preset-grid">
+        <button class="preset-btn" onclick="addPresetPanel('quick-actions')">&#9889; Quick Actions</button>
+        <button class="preset-btn" onclick="addPresetPanel('activity-feed')">&#128202; Activity Feed</button>
+        <button class="preset-btn" onclick="addPresetPanel('chat')">&#128172; Chat (Twitch+7TV)</button>
+        <button class="preset-btn" onclick="addPresetPanel('stream')">&#128250; Live Preview</button>
+        <button class="preset-btn" onclick="addPresetPanel('tikfinity-chat')">&#127925; TikTok Chat</button>
+        <button class="preset-btn" onclick="addPresetPanel('tikfinity-views')">&#128065; TikTok Views</button>
+        <button class="preset-btn" onclick="addPresetPanel('predictions')">&#127919; Predictions</button>
+        <button class="preset-btn" onclick="addPresetPanel('sub-goal')">&#127873; Sub Goal</button>
+        <button class="preset-btn" onclick="addPresetPanel('stream-manager')">&#127897;&#65039; Stream Manager</button>
+      </div>
+
+      <label style="margin-top:20px;">Custom URL Panel</label>
+      <input type="text" id="custom-name" placeholder="Panel name (e.g. My Custom Widget)">
+      <input type="text" id="custom-url" placeholder="https://..." style="margin-top:6px;">
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeAddModal()">Cancel</button>
+      <button class="primary" onclick="addCustomPanel()">Add Custom</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Settings</span>
+      <button onclick="cancelSettings()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="section-title">Layout</div>
+
+      <label>Grid Columns (more = finer horizontal snap)</label>
+      <div class="range-row">
+        <input type="range" id="setting-columns" min="12" max="240" step="6">
+        <span class="range-value" id="setting-columns-val">12</span>
+      </div>
+
+      <label>Grid Rows (more = finer vertical snap)</label>
+      <div class="range-row">
+        <input type="range" id="setting-rows" min="6" max="240" step="2">
+        <span class="range-value" id="setting-rows-val">12</span>
+      </div>
+
+      <label>Panel Gap (pixels)</label>
+      <div class="range-row">
+        <input type="range" id="setting-gap" min="0" max="12" step="1">
+        <span class="range-value" id="setting-gap-val">1</span>
+      </div>
+
+      <hr>
+      <div class="section-title">Behavior</div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="setting-float">
+        <label for="setting-float">Float (panels can be placed anywhere, won't auto-stack)</label>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="setting-animate">
+        <label for="setting-animate">Animate panel movements</label>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="setting-pin-toolbar">
+        <label for="setting-pin-toolbar">Always show toolbar (don't auto-hide)</label>
+      </div>
+
+      <hr>
+      <div class="section-title">Reset</div>
+      <button class="preset-btn" style="text-align:center; width:100%;" onclick="resetSettings()">Reset settings to defaults</button>
+
+    </div>
+    <div class="modal-footer">
+      <button onclick="cancelSettings()">Cancel</button>
+      <button class="primary" onclick="closeSettings()">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+
+<script>
+  // ============ CONFIG ============
+  const CHANNEL = 'aaroneal';
+
+  const PRESETS = {
+    'quick-actions': {
+      title: 'Quick Actions',
+      url: `https://dashboard.twitch.tv/popout/u/${CHANNEL}/stream-manager/quick-actions?uuid=f878d6215f2ff9c30de41b3cbdf4f7f6`,
+      w: 4, h: 6
+    },
+    'activity-feed': {
+      title: 'Activity Feed',
+      url: `https://streamelements.com/dashboard/6214670f53678f6f0d07d53d/activity/popout`,
+      w: 4, h: 6
+    },
+    'chat': {
+      title: 'Chat',
+      url: `https://www.twitch.tv/popout/${CHANNEL}/chat?popout=`,
+      w: 4, h: 12,
+      type: 'webview'  // rendered as <webview> so 7TV extension can inject
+    },
+    'stream': {
+      title: 'Live Preview',
+      url: `https://player.twitch.tv/?channel=${CHANNEL}&parent=localhost&muted=true&autoplay=true`,
+      w: 8, h: 6,
+      type: 'stream'
+    },
+    'tikfinity-chat': {
+      title: 'TikTok Chat',
+      url: `https://tikfinity.zerody.one/widget/activity-feed?cid=30451&did=1`,
+      w: 4, h: 6
+    },
+    'tikfinity-views': {
+      title: 'TikTok Views',
+      url: `https://tikfinity.zerody.one/widget/viewercount?cid=30451`,
+      w: 2, h: 2
+    },
+    'predictions': {
+      title: 'Predictions',
+      url: `https://www.twitch.tv/popout/${CHANNEL}/predictions/summary`,
+      w: 4, h: 6
+    },
+    'sub-goal': {
+      title: 'Sub Goal',
+      url: `https://streamelements.com/overlay/655ea9ee118dc33c8fadd6d2/editor?er=1`,
+      w: 4, h: 3
+    },
+    'stream-manager': {
+      title: 'Stream Manager',
+      url: `https://dashboard.twitch.tv/u/${CHANNEL}/stream-manager`,
+      w: 6, h: 9
+    }
+  };
+
+  const DEFAULT_LAYOUT = [
+    { id: 'p-quick-actions-default', preset: 'quick-actions', x: 0, y: 0,  w: 4, h: 6 },
+    { id: 'p-activity-feed-default', preset: 'activity-feed', x: 4, y: 0,  w: 4, h: 6 },
+    { id: 'p-chat-default',          preset: 'chat',          x: 8, y: 0,  w: 4, h: 12 },
+    { id: 'p-stream-default',        preset: 'stream',        x: 0, y: 6,  w: 8, h: 6 }
+  ];
+
+  const DEFAULT_SETTINGS = {
+    columns: 12,
+    rows: 12,
+    gap: 1,
+    float: true,
+    animate: true,
+    pinToolbar: false
+  };
+
+  // ============ STATE ============
+  let grid;
+  let panels = {};
+  let closedPanels = [];
+  let isLocked = false;
+  let settings = { ...DEFAULT_SETTINGS };
+
+  // ============ SETTINGS ============
+  function loadSettings() {
+    const saved = localStorage.getItem('dashboard-settings');
+    if (saved) {
+      try { settings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }; }
+      catch { settings = { ...DEFAULT_SETTINGS }; }
+    }
+    applySettings();
+  }
+
+  function saveSettings() {
+    localStorage.setItem('dashboard-settings', JSON.stringify(settings));
+  }
+
+  function applySettings() {
+    document.documentElement.style.setProperty('--gap', settings.gap + 'px');
+    document.body.classList.toggle('toolbar-pinned', !!settings.pinToolbar);
+
+    if (grid) {
+      grid.cellHeight(calculateCellHeight());
+      grid.float(settings.float);
+      grid.opts.animate = settings.animate;
+      grid.margin(settings.gap);
+    }
+  }
+
+  let pendingSettings = null;
+
+  function openSettings() {
+    pendingSettings = { ...settings };
+
+    document.getElementById('setting-columns').value = settings.columns;
+    document.getElementById('setting-columns-val').textContent = settings.columns;
+    document.getElementById('setting-rows').value = settings.rows;
+    document.getElementById('setting-rows-val').textContent = settings.rows;
+    document.getElementById('setting-gap').value = settings.gap;
+    document.getElementById('setting-gap-val').textContent = settings.gap;
+    document.getElementById('setting-float').checked = settings.float;
+    document.getElementById('setting-animate').checked = settings.animate;
+    document.getElementById('setting-pin-toolbar').checked = settings.pinToolbar;
+
+    document.getElementById('settings-modal').classList.add('show');
+    document.body.classList.add('modal-open');
+  }
+
+  function closeSettings() {
+    if (!pendingSettings) {
+      document.getElementById('settings-modal').classList.remove('show');
+      document.body.classList.remove('modal-open');
+      return;
+    }
+
+    const colsChanged = pendingSettings.columns !== settings.columns;
+    const rowsChanged = pendingSettings.rows !== settings.rows;
+    const needsReload = colsChanged || rowsChanged;
+
+    // Flush current positions before scaling so we scale the live state
+    saveLayout();
+    if (colsChanged) scaleLayoutColumns(settings.columns, pendingSettings.columns);
+    if (rowsChanged) scaleLayoutRows(settings.rows, pendingSettings.rows);
+
+    settings = { ...pendingSettings };
+    pendingSettings = null;
+    saveSettings();
+
+    document.getElementById('settings-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+
+    if (needsReload) {
+      location.reload();
+    } else {
+      applySettings();
+    }
+  }
+
+  function cancelSettings() {
+    pendingSettings = null;
+    document.getElementById('settings-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+  }
+
+  function bindSettingsControls() {
+    document.getElementById('setting-columns').addEventListener('input', e => {
+      const v = parseInt(e.target.value);
+      if (pendingSettings) pendingSettings.columns = v;
+      document.getElementById('setting-columns-val').textContent = v;
+    });
+
+    document.getElementById('setting-rows').addEventListener('input', e => {
+      const v = parseInt(e.target.value);
+      if (pendingSettings) pendingSettings.rows = v;
+      document.getElementById('setting-rows-val').textContent = v;
+    });
+
+    document.getElementById('setting-gap').addEventListener('input', e => {
+      const v = parseInt(e.target.value);
+      if (pendingSettings) pendingSettings.gap = v;
+      document.getElementById('setting-gap-val').textContent = v;
+      document.documentElement.style.setProperty('--gap', v + 'px');
+      if (grid) {
+        grid.margin(v);
+        grid.cellHeight(calculateCellHeightForRows(pendingSettings.rows, v));
+      }
+    });
+
+    document.getElementById('setting-float').addEventListener('change', e => {
+      if (pendingSettings) pendingSettings.float = e.target.checked;
+      if (grid) grid.float(e.target.checked);
+    });
+
+    document.getElementById('setting-animate').addEventListener('change', e => {
+      if (pendingSettings) pendingSettings.animate = e.target.checked;
+      if (grid) grid.opts.animate = e.target.checked;
+    });
+
+    document.getElementById('setting-pin-toolbar').addEventListener('change', e => {
+      if (pendingSettings) pendingSettings.pinToolbar = e.target.checked;
+      document.body.classList.toggle('toolbar-pinned', e.target.checked);
+    });
+  }
+
+  function resetSettings() {
+    if (!confirm('Reset settings to defaults? Layout panels stay where they are.')) return;
+    settings = { ...DEFAULT_SETTINGS };
+    saveSettings();
+    location.reload();
+  }
+
+  function scaleLayoutColumns(oldCols, newCols) {
+    const saved = localStorage.getItem('dashboard-layout');
+    if (!saved) return;
+    try {
+      const nodes = JSON.parse(saved);
+      const ratio = newCols / oldCols;
+      const scaled = nodes.map(n => ({
+        ...n,
+        x: Math.round(n.x * ratio),
+        w: Math.max(1, Math.round(n.w * ratio))
+      }));
+      scaled.forEach(n => {
+        if (n.x + n.w > newCols) n.w = newCols - n.x;
+        if (n.w < 1) { n.x = 0; n.w = Math.min(newCols, 4); }
+      });
+      localStorage.setItem('dashboard-layout', JSON.stringify(scaled));
+    } catch (e) { console.warn('scaleLayoutColumns failed', e); }
+  }
+
+  function scaleLayoutRows(oldRows, newRows) {
+    const saved = localStorage.getItem('dashboard-layout');
+    if (!saved) return;
+    try {
+      const nodes = JSON.parse(saved);
+      const ratio = newRows / oldRows;
+      const scaled = nodes.map(n => ({
+        ...n,
+        y: Math.round(n.y * ratio),
+        h: Math.max(1, Math.round(n.h * ratio))
+      }));
+      localStorage.setItem('dashboard-layout', JSON.stringify(scaled));
+    } catch (e) { console.warn('scaleLayoutRows failed', e); }
+  }
+
+  // ============ INIT ============
+  function calculateCellHeight() {
+    return calculateCellHeightForRows(settings.rows, settings.gap);
+  }
+
+  function calculateCellHeightForRows(rows, gap) {
+    const totalGap = gap * (rows + 1);
+    const available = window.innerHeight - totalGap;
+    return Math.max(8, Math.floor(available / rows));
+  }
+
+  function injectColumnCSS(columnCount) {
+    const styleId = 'gridstack-custom-columns';
+    let style = document.getElementById(styleId);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = styleId;
+      document.head.appendChild(style);
+    }
+
+    let css = '';
+    const pct = 100 / columnCount;
+    for (let i = 0; i <= columnCount; i++) {
+      css += `.grid-stack > .grid-stack-item[gs-w="${i}"] { width: ${pct * i}%; }\n`;
+      css += `.grid-stack > .grid-stack-item[gs-x="${i}"] { left: ${pct * i}%; }\n`;
+      css += `.grid-stack > .grid-stack-item[gs-min-w="${i}"] { min-width: ${pct * i}%; }\n`;
+      css += `.grid-stack > .grid-stack-item[gs-max-w="${i}"] { max-width: ${pct * i}%; }\n`;
+    }
+    style.textContent = css;
+  }
+
+  function initGrid() {
+    injectColumnCSS(settings.columns);
+
+    grid = GridStack.init({
+      column: settings.columns,
+      cellHeight: calculateCellHeight(),
+      margin: settings.gap,
+      float: settings.float,
+      animate: settings.animate,
+      resizable: { handles: 'all' },
+      draggable: { handle: '.panel-header' },
+      disableOneColumnMode: true
+    });
+
+    grid.on('dragstart', () => document.body.classList.add('dragging'));
+    grid.on('dragstop', () => {
+      document.body.classList.remove('dragging');
+      saveLayout();
+    });
+
+    setupTilingResize();
+
+    grid.on('change', saveLayout);
+    grid.on('added removed', saveLayout);
+
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (grid) grid.cellHeight(calculateCellHeight());
+      }, 150);
+    });
+  }
+
+  // ============ TILING RESIZE ============
+  let _resizeStart = null;
+  let _resizePartner = null;
+
+  function setupTilingResize() {
+    grid.on('resizestart', (event, el) => {
+      document.body.classList.add('dragging');
+      const node = el.gridstackNode;
+      if (!node) return;
+
+      _resizeStart = {
+        id: node.id,
+        x: node.x, y: node.y, w: node.w, h: node.h,
+        others: grid.engine.nodes
+          .filter(n => n.id !== node.id)
+          .map(n => ({ id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, el: n.el }))
+      };
+      _resizePartner = null;
+    });
+
+    grid.on('resize', (event, el) => {
+      if (!_resizeStart) return;
+      const node = el.gridstackNode;
+      if (!node || node.id !== _resizeStart.id) return;
+
+      const dx = node.x - _resizeStart.x;
+      const dw = node.w - _resizeStart.w;
+      const dy = node.y - _resizeStart.y;
+      const dh = node.h - _resizeStart.h;
+
+      const RIGHT  = Math.abs(dx) < 0.5 && Math.abs(dw) > 0;
+      const LEFT   = Math.abs(dx) > 0 && Math.abs(dx + dw) < 0.5 && Math.abs(dw) > 0;
+      const BOTTOM = Math.abs(dy) < 0.5 && Math.abs(dh) > 0;
+      const TOP    = Math.abs(dy) > 0 && Math.abs(dy + dh) < 0.5 && Math.abs(dh) > 0;
+
+      let partner = null;
+      let side = null;
+
+      if (RIGHT)       { partner = findClosestNeighbor(node, _resizeStart.others, 'right');  side = 'right';  }
+      else if (LEFT)   { partner = findClosestNeighbor(node, _resizeStart.others, 'left');   side = 'left';   }
+      else if (BOTTOM) { partner = findClosestNeighbor(node, _resizeStart.others, 'bottom'); side = 'bottom'; }
+      else if (TOP)    { partner = findClosestNeighbor(node, _resizeStart.others, 'top');    side = 'top';    }
+
+      if (_resizePartner && (!partner || partner.id !== _resizePartner.id)) {
+        restorePartnerToStart(_resizePartner);
+        _resizePartner = null;
+      }
+
+      if (!partner) return;
+
+      if (!_resizePartner || _resizePartner.id !== partner.id) {
+        _resizePartner = { ...partner };
+      }
+
+      let newX = partner.x, newY = partner.y, newW = partner.w, newH = partner.h;
+
+      if      (side === 'right')  { newX = partner.x + dw; newW = partner.w - dw; }
+      else if (side === 'left')   { newW = partner.w + dx; }
+      else if (side === 'bottom') { newY = partner.y + dh; newH = partner.h - dh; }
+      else if (side === 'top')    { newH = partner.h + dy; }
+
+      if (newW < 1 || newH < 1) return;
+
+      if (newX === partner.x && newY === partner.y && newW === partner.w && newH === partner.h) return;
+
+      grid.update(partner.el, { x: newX, y: newY, w: newW, h: newH });
+    });
+
+    grid.on('resizestop', () => {
+      document.body.classList.remove('dragging');
+      _resizeStart = null;
+      _resizePartner = null;
+      saveLayout();
+    });
+  }
+
+  function findClosestNeighbor(resizedNode, others, side) {
+    const r = resizedNode;
+    const rLeft = r.x, rRight = r.x + r.w;
+    const rTop  = r.y, rBottom = r.y + r.h;
+    const rangeOverlaps = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
+
+    let candidates = [];
+    for (const o of others) {
+      const oLeft = o.x, oRight = o.x + o.w;
+      const oTop  = o.y, oBottom = o.y + o.h;
+
+      if (side === 'right') {
+        if (oLeft < rRight) continue;
+        if (!rangeOverlaps(rTop, rBottom, oTop, oBottom)) continue;
+        candidates.push({ ...o, dist: oLeft - rRight });
+      } else if (side === 'left') {
+        if (oRight > rLeft) continue;
+        if (!rangeOverlaps(rTop, rBottom, oTop, oBottom)) continue;
+        candidates.push({ ...o, dist: rLeft - oRight });
+      } else if (side === 'bottom') {
+        if (oTop < rBottom) continue;
+        if (!rangeOverlaps(rLeft, rRight, oLeft, oRight)) continue;
+        candidates.push({ ...o, dist: oTop - rBottom });
+      } else if (side === 'top') {
+        if (oBottom > rTop) continue;
+        if (!rangeOverlaps(rLeft, rRight, oLeft, oRight)) continue;
+        candidates.push({ ...o, dist: rTop - oBottom });
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => {
+      if (Math.abs(a.dist - b.dist) > 0.1) return a.dist - b.dist;
+      const overlapAmount = (n) => {
+        if (side === 'right' || side === 'left') {
+          return Math.min(rBottom, n.y + n.h) - Math.max(rTop, n.y);
+        }
+        return Math.min(rRight, n.x + n.w) - Math.max(rLeft, n.x);
+      };
+      return overlapAmount(b) - overlapAmount(a);
+    });
+
+    return candidates[0];
+  }
+
+  function restorePartnerToStart(snap) {
+    if (!snap || !snap.el) return;
+    grid.update(snap.el, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
+  }
+
+  // ============ PANEL HTML ============
+  function buildPanelHTML(id, config) {
+    const { title, url, type } = config;
+
+    // <webview> for chat — gives 7TV extension a top-level Chromium context to inject into
+    if (type === 'webview') {
+      return `
+        <div class="panel-header">
+          <div class="title-group">
+            <span class="dot"></span>
+            <span class="title-text">${escapeHtml(title)}</span>
+          </div>
+          <div class="actions">
+            <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
+            <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <webview src="${escapeHtml(url)}" allowpopups></webview>
+        </div>
+      `;
+    }
+
+    if (type === 'stream') {
+      return `
+        <div class="panel-header">
+          <div class="title-group">
+            <span class="dot"></span>
+            <span class="title-text">${escapeHtml(title)}</span>
+          </div>
+          <div class="actions">
+            <button onclick="toggleStreamMute('${id}')" title="Toggle mute"><span class="mute-icon">&#128263;</span></button>
+            <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
+            <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <iframe src="${escapeHtml(url)}" frameborder="0" scrolling="no" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="panel-header">
+        <div class="title-group">
+          <span class="dot"></span>
+          <span class="title-text">${escapeHtml(title)}</span>
+        </div>
+        <div class="actions">
+          <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
+          <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <iframe src="${escapeHtml(url)}" allow="clipboard-read; clipboard-write"></iframe>
+      </div>
+    `;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ============ CRUD ============
+  function addPanel(id, config, gridOpts = {}) {
+    const w = gridOpts.w || config.w || 8;
+    const h = gridOpts.h || config.h || 12;
+    const x = gridOpts.x;
+    const y = gridOpts.y;
+
+    const widget = {
+      id,
+      w, h,
+      ...(x !== undefined ? { x } : {}),
+      ...(y !== undefined ? { y } : {}),
+      content: `<div class="grid-stack-item-content" id="content-${id}">${buildPanelHTML(id, config)}</div>`
+    };
+
+    grid.addWidget(widget);
+    panels[id] = config;
+    saveLayout();
+  }
+
+  function closePanel(id) {
+    const config = panels[id];
+    if (!config) return;
+    const node = grid.engine.nodes.find(n => n.id === id);
+    if (!node) return;
+
+    closedPanels.push({ ...config, w: node.w, h: node.h });
+    grid.removeWidget(node.el, true);
+    delete panels[id];
+    saveLayout();
+    saveClosedPanels();
+  }
+
+  function reopenPanel(idx) {
+    const config = closedPanels.splice(idx, 1)[0];
+    if (!config) return;
+    const newId = `p-${config.preset || 'custom'}-${Date.now()}`;
+    addPanel(newId, config, { w: config.w, h: config.h });
+    saveClosedPanels();
+    closeClosedMenu();
+  }
+
+  // ============ DIALOGS ============
+  function addPanelDialog() {
+    document.getElementById('add-modal').classList.add('show');
+    document.body.classList.add('modal-open');
+  }
+  function closeAddModal() {
+    document.getElementById('add-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+    document.getElementById('custom-name').value = '';
+    document.getElementById('custom-url').value = '';
+  }
+  function addPresetPanel(presetKey) {
+    const preset = PRESETS[presetKey];
+    if (!preset) return;
+    const id = `p-${presetKey}-${Date.now()}`;
+    addPanel(id, { ...preset, preset: presetKey });
+    closeAddModal();
+  }
+  function addCustomPanel() {
+    const name = document.getElementById('custom-name').value.trim();
+    const url = document.getElementById('custom-url').value.trim();
+    if (!name || !url) { alert('Please provide both a name and a URL.'); return; }
+    const id = `p-custom-${Date.now()}`;
+    addPanel(id, { title: name, url, w: 8, h: 12 });
+    closeAddModal();
+  }
+
+  // ============ CLOSED PANELS MENU ============
+  function toggleClosedMenu(e) {
+    if (e) e.stopPropagation();
+    const wrapper = document.getElementById('closed-panels-wrapper');
+    wrapper.classList.toggle('open');
+    if (wrapper.classList.contains('open')) renderClosedMenu();
+  }
+  function closeClosedMenu() {
+    document.getElementById('closed-panels-wrapper').classList.remove('open');
+  }
+  function renderClosedMenu() {
+    const menu = document.getElementById('closed-menu');
+    if (closedPanels.length === 0) {
+      menu.innerHTML = '<div class="menu-item empty">No closed panels</div>';
+      return;
+    }
+    menu.innerHTML = closedPanels.map((p, i) =>
+      `<div class="menu-item" onclick="reopenPanel(${i})"><span class="item-label">+ ${escapeHtml(p.title)}</span></div>`
+    ).join('');
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#closed-panels-wrapper')) closeClosedMenu();
+    if (!e.target.closest('#layouts-wrapper')) closeLayoutsMenu();
+  });
+
+  // ============ SAVED LAYOUTS ============
+  function getSavedLayouts() {
+    try { return JSON.parse(localStorage.getItem('dashboard-saved-layouts') || '[]'); }
+    catch { return []; }
+  }
+  function setSavedLayouts(layouts) {
+    localStorage.setItem('dashboard-saved-layouts', JSON.stringify(layouts));
+  }
+  function captureCurrentLayout() {
+    if (!grid) return null;
+    const nodes = grid.engine.nodes.map(n => ({
+      id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, config: panels[n.id]
+    })).filter(n => n.config);
+    return { panels: nodes, columns: settings.columns, rows: settings.rows, gap: settings.gap, savedAt: Date.now() };
+  }
+  function saveCurrentAsLayout() {
+    const name = prompt('Layout name:', '');
+    if (!name || !name.trim()) return;
+    const trimmedName = name.trim();
+    const layouts = getSavedLayouts();
+    const existingIdx = layouts.findIndex(l => l.name === trimmedName);
+    if (existingIdx >= 0) {
+      if (!confirm(`A layout named "${trimmedName}" already exists. Overwrite it?`)) return;
+      layouts.splice(existingIdx, 1);
+    }
+    const captured = captureCurrentLayout();
+    if (!captured) return;
+    layouts.push({ name: trimmedName, ...captured });
+    setSavedLayouts(layouts);
+    closeLayoutsMenu();
+    const btn = document.querySelector('#layouts-wrapper button');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '&#10003; Saved';
+      btn.style.color = 'var(--accent)';
+      setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
+    }
+  }
+  function loadSavedLayout(idx) {
+    const layouts = getSavedLayouts();
+    const layout = layouts[idx];
+    if (!layout) return;
+    if (!confirm(`Load layout "${layout.name}"? Current layout will be replaced.`)) return;
+    const newSettings = { ...settings, columns: layout.columns, rows: layout.rows, gap: layout.gap !== undefined ? layout.gap : settings.gap };
+    localStorage.setItem('dashboard-settings', JSON.stringify(newSettings));
+    localStorage.setItem('dashboard-layout', JSON.stringify(layout.panels));
+    localStorage.setItem('dashboard-version', String(LAYOUT_VERSION));
+    location.reload();
+  }
+  function deleteSavedLayout(idx, event) {
+    event.stopPropagation();
+    const layouts = getSavedLayouts();
+    const layout = layouts[idx];
+    if (!layout) return;
+    if (!confirm(`Delete layout "${layout.name}"?`)) return;
+    layouts.splice(idx, 1);
+    setSavedLayouts(layouts);
+    renderLayoutsMenu();
+  }
+  function toggleLayoutsMenu(e) {
+    if (e) e.stopPropagation();
+    const wrapper = document.getElementById('layouts-wrapper');
+    wrapper.classList.toggle('open');
+    if (wrapper.classList.contains('open')) renderLayoutsMenu();
+  }
+  function closeLayoutsMenu() {
+    document.getElementById('layouts-wrapper').classList.remove('open');
+  }
+  function renderLayoutsMenu() {
+    const menu = document.getElementById('layouts-menu');
+    const layouts = getSavedLayouts();
+    let html = `<div class="menu-action" onclick="saveCurrentAsLayout()">&#128190; Save current layout</div>`;
+    if (layouts.length === 0) {
+      html += '<div class="menu-item empty">No saved layouts yet</div>';
+    } else {
+      html += layouts.map((l, i) => `
+        <div class="menu-item" onclick="loadSavedLayout(${i})">
+          <span class="item-label">&#128194; ${escapeHtml(l.name)}</span>
+          <button class="item-action" onclick="deleteSavedLayout(${i}, event)" title="Delete">&#128465;</button>
+        </div>
+      `).join('');
+    }
+    menu.innerHTML = html;
+  }
+
+  // ============ PANEL ACTIONS ============
+  function reloadPanel(id) {
+    const content = document.getElementById(`content-${id}`);
+    if (!content) return;
+    content.querySelectorAll('iframe').forEach(f => { f.src = f.src; });
+    content.querySelectorAll('webview').forEach(wv => wv.reload());
+  }
+
+  function toggleStreamMute(id) {
+    const content = document.getElementById(`content-${id}`);
+    if (!content) return;
+    const iframe = content.querySelector('iframe');
+    const muteIcon = content.querySelector('.mute-icon');
+    const url = new URL(iframe.src);
+    const isMuted = url.searchParams.get('muted') === 'true';
+    url.searchParams.set('muted', !isMuted);
+    iframe.src = url.toString();
+    muteIcon.textContent = isMuted ? '&#128266;' : '&#128263;';
+  }
+
+  function reloadAll() {
+    document.querySelectorAll('.grid-stack iframe').forEach(f => { f.src = f.src; });
+    document.querySelectorAll('.grid-stack webview').forEach(wv => wv.reload());
+  }
+
+  function toggleLock() {
+    isLocked = !isLocked;
+    document.body.classList.toggle('locked', isLocked);
+    const btn = document.getElementById('lock-btn');
+    btn.textContent = isLocked ? '&#128274; Locked' : '&#128275; Unlocked';
+    grid.engine.nodes.forEach(node => {
+      grid.update(node.el, { noMove: isLocked, noResize: isLocked, locked: isLocked });
+    });
+  }
+
+  function resetLayout() {
+    if (!confirm('Reset to default layout? This will close any custom panels, clear saved positions, and reset grid columns/rows to defaults.')) return;
+    localStorage.removeItem('dashboard-layout');
+    localStorage.removeItem('dashboard-closed');
+    localStorage.removeItem('dashboard-version');
+    const newSettings = { ...settings, columns: DEFAULT_SETTINGS.columns, rows: DEFAULT_SETTINGS.rows };
+    localStorage.setItem('dashboard-settings', JSON.stringify(newSettings));
+    location.reload();
+  }
+
+  // ============ PERSISTENCE ============
+  const LAYOUT_VERSION = 2;
+
+  function saveLayout() {
+    if (!grid) return;
+    const nodes = grid.engine.nodes.map(n => ({
+      id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, config: panels[n.id]
+    })).filter(n => n.config);
+    localStorage.setItem('dashboard-layout', JSON.stringify(nodes));
+    localStorage.setItem('dashboard-version', String(LAYOUT_VERSION));
+  }
+
+  function saveClosedPanels() {
+    localStorage.setItem('dashboard-closed', JSON.stringify(closedPanels));
+  }
+
+  function loadLayout() {
+    const saved = localStorage.getItem('dashboard-layout');
+    const closedSaved = localStorage.getItem('dashboard-closed');
+    const savedVersion = parseInt(localStorage.getItem('dashboard-version') || '1');
+
+    if (closedSaved) {
+      try { closedPanels = JSON.parse(closedSaved) || []; } catch {}
+    }
+
+    if (saved && savedVersion === LAYOUT_VERSION) {
+      try {
+        const nodes = JSON.parse(saved);
+        if (nodes.length > 0) {
+          const validNodes = nodes.filter(n =>
+            n.config && n.x >= 0 && n.y >= 0 && n.w > 0 && n.h > 0 && n.x + n.w <= settings.columns
+          );
+          if (validNodes.length === nodes.length) {
+            validNodes.forEach(n => {
+              if (n.config && n.config.preset && PRESETS[n.config.preset]) {
+                const fresh = PRESETS[n.config.preset];
+                n.config.url = fresh.url;
+                n.config.type = fresh.type;
+              }
+              addPanel(n.id, n.config, { x: n.x, y: n.y, w: n.w, h: n.h });
+            });
+            return;
+          }
+        }
+      } catch (e) { console.warn('Failed to load layout', e); }
+    }
+
+    localStorage.setItem('dashboard-version', String(LAYOUT_VERSION));
+    const colRatio = settings.columns / 12;
+    const rowRatio = settings.rows / 12;
+
+    DEFAULT_LAYOUT.forEach(item => {
+      const config = { ...PRESETS[item.preset], preset: item.preset };
+      addPanel(item.id, config, {
+        x: Math.round(item.x * colRatio),
+        y: Math.round(item.y * rowRatio),
+        w: Math.max(1, Math.round(item.w * colRatio)),
+        h: Math.max(1, Math.round(item.h * rowRatio))
+      });
+    });
+  }
+
+  // ============ CLOCK ============
+  function updateClock() {
+    const n = new Date();
+    document.getElementById('clock').textContent =
+      `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ============ SHORTCUTS ============
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reloadAll(); }
+    if (e.ctrlKey && e.key === 'l') { e.preventDefault(); toggleLock(); }
+    if (e.ctrlKey && e.key === ',') { e.preventDefault(); openSettings(); }
+    if (e.key === 'Escape') { closeAddModal(); cancelSettings(); closeClosedMenu(); }
+  });
+
+  // ============ STARTUP ============
+  loadSettings();
+  initGrid();
+  bindSettingsControls();
+  loadLayout();
+  applySettings();
+</script>
+
+</body>
+</html>

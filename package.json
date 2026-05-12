@@ -1,0 +1,44 @@
+{
+  "name": "aaroneal-dashboard",
+  "version": "1.0.0",
+  "description": "Aaroneal Stream Dashboard",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "publish": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "com.aaroneal.dashboard",
+    "productName": "Aaroneal Dashboard",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "larcobeats",
+      "repo": "aaroneal-dashboard"
+    }
+  }
+}
