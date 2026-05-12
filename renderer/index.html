@@ -621,8 +621,8 @@
     'activity-feed': {
       title: 'Activity Feed',
       url: `https://streamelements.com/dashboard/6214670f53678f6f0d07d53d/activity/popout`,
-      w: 4, h: 6
-      // iframe (default) — main window now uses persist:main so auth cookies are shared
+      w: 4, h: 6,
+      type: 'webview'  // must be webview — iframe blocks SE auth cookies (third-party SameSite policy)
     },
     'chat': {
       title: 'Chat',
@@ -940,7 +940,16 @@
     // Sync the webview's inline height to the panel-body's current pixel height.
     // Called by both the ResizeObserver (future resizes) and the rAF init loop.
     const syncHeight = () => {
-      const h = body.getBoundingClientRect().height;
+      let h = body.getBoundingClientRect().height;
+      if (h <= 0) {
+        // getBoundingClientRect returns 0 before first paint (common at startup).
+        // GridStack sets style.height on .grid-stack-item synchronously in addWidget,
+        // so we can compute panel-body height from it immediately without layout.
+        // --header-h = 24px, subtract 2px for the panel border.
+        const gsItem = body.closest('.grid-stack-item');
+        const itemH = gsItem ? (parseFloat(gsItem.style.height) || 0) : 0;
+        if (itemH > 0) h = itemH - 24 - 2;
+      }
       if (h > 0) wv.style.height = h + 'px';
       return h;
     };

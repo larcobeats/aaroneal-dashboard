@@ -234,8 +234,15 @@ function buildMenu() {
         { type: 'separator' },
         { label: `Version ${app.getVersion()}`, enabled: false },
         { label: 'Check for Updates', click: () => {
-            // Show the renderer's update modal immediately, then kick off the check.
-            // autoUpdater events will update the modal state as they fire.
+            // If an update is already downloaded and waiting to install, re-surface
+            // that state immediately rather than starting a redundant check.
+            if (_lastUpdatePayload?.state === 'ready') {
+              sendUpdateStatus(_lastUpdatePayload);
+              return;
+            }
+            // Force a fresh network request — prevents stale cached "no update" results
+            // from the silent startup check masking a newly published release.
+            autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
             sendUpdateStatus({ state: 'checking' });
             autoUpdater.checkForUpdates().catch(err =>
               sendUpdateStatus({ state: 'error', message: err.message })
@@ -260,7 +267,10 @@ ipcMain.on('menu-data', (_e, data) => {
 // Root cause of the broken "Check for Updates" button: these listeners were
 // completely absent — events fired into /dev/null and nothing reached the UI.
 
+let _lastUpdatePayload = null;
+
 function sendUpdateStatus(payload) {
+  _lastUpdatePayload = payload;
   mainWin?.webContents.send('update-status', payload);
 }
 
