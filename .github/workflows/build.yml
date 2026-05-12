@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'   # triggers on any tag like v1.0.0, v1.2.3, etc.
 
+permissions:
+  contents: write   # required to create GitHub Releases and upload assets
+
 jobs:
   build:
     runs-on: windows-latest
