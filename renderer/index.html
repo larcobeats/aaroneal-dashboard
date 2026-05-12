@@ -957,10 +957,18 @@
     // Activate the webview src once we have a real height.
     // Using data-src in the HTML delays loading until this point so the
     // guest renderer process starts with the correct viewport size.
+    //
+    // CRITICAL: void wv.offsetHeight flushes the browser's pending style
+    // recalculation synchronously BEFORE setAttribute('src') runs. Without
+    // this flush, JS batches the style.height assignment and Electron reads
+    // clientHeight=0 when it creates the guest renderer process, locking
+    // the viewport at 0px regardless of what style.height is set to.
     const activateSrc = () => {
       if (wv.hasAttribute('src')) return; // already navigated
       const src = wv.getAttribute('data-src');
-      if (src) wv.setAttribute('src', src);
+      if (!src) return;
+      void wv.offsetHeight; // flush layout → Electron reads correct height on next line
+      wv.setAttribute('src', src);
     };
 
     // ResizeObserver keeps height correct on every future GridStack / window resize
@@ -968,13 +976,14 @@
     ro.observe(body);
     _webviewObservers.set(id, ro);
 
-    // After the guest page finishes loading, do a 1px height toggle so Electron
-    // sends a fresh resize IPC to the guest renderer. This covers the case where
-    // the renderer locked in a stale viewport before style.height was applied.
+    // Safety net: once the guest page DOM is ready, force a drastic resize
+    // (1px → full height) so Electron sends a definitive SetSize IPC to the
+    // guest renderer. A 1px delta is too subtle; dropping to 1 guarantees
+    // the renderer receives and applies the correct viewport height.
     wv.addEventListener('dom-ready', () => {
       const h = body.getBoundingClientRect().height;
       if (h > 0) {
-        wv.style.height = (h - 1) + 'px';
+        wv.style.height = '1px';
         requestAnimationFrame(() => { wv.style.height = h + 'px'; });
       }
     }, { once: true });
