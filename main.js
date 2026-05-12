@@ -50,17 +50,21 @@ function startLocalServer() {
 // Electron can load Chrome (MV2/MV3) extensions via session.loadExtension().
 // Firefox/Zen extensions (.xpi) are a different format and cannot be loaded here.
 
-const EXT_7TV_ID = 'imenocelblhgehldidaghmgnchchnmoh';
+// Stable and Nightly IDs — checked in order, first found wins
+const EXT_7TV_IDS = [
+  'fphegifdehlodcepfkgofelcenelpedj', // 7TV Nightly
+  'imenocelblhgehldidaghmgnchchnmoh', // 7TV Stable
+];
 
 function find7TVExtension() {
   const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   const roaming = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
 
   const browserBases = [
+    path.join(local, 'Microsoft', 'Edge', 'User Data'),
     path.join(local, 'Google', 'Chrome', 'User Data'),
     path.join(local, 'Google', 'Chrome Beta', 'User Data'),
     path.join(local, 'Google', 'Chrome SxS', 'User Data'),
-    path.join(local, 'Microsoft', 'Edge', 'User Data'),
     path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data'),
     path.join(roaming, 'Opera Software', 'Opera Stable'),
   ];
@@ -68,7 +72,6 @@ function find7TVExtension() {
   for (const base of browserBases) {
     if (!fs.existsSync(base)) continue;
 
-    // Collect all profile folders (Default, Profile 1, Profile 2, …)
     const profiles = ['Default'];
     try {
       fs.readdirSync(base)
@@ -77,16 +80,18 @@ function find7TVExtension() {
     } catch {}
 
     for (const profile of profiles) {
-      const extBase = path.join(base, profile, 'Extensions', EXT_7TV_ID);
-      if (!fs.existsSync(extBase)) continue;
-      try {
-        const versions = fs.readdirSync(extBase)
-          .filter(v => fs.statSync(path.join(extBase, v)).isDirectory())
-          .sort();
-        if (versions.length > 0) {
-          return path.join(extBase, versions[versions.length - 1]);
-        }
-      } catch {}
+      for (const id of EXT_7TV_IDS) {
+        const extBase = path.join(base, profile, 'Extensions', id);
+        if (!fs.existsSync(extBase)) continue;
+        try {
+          const versions = fs.readdirSync(extBase)
+            .filter(v => fs.statSync(path.join(extBase, v)).isDirectory())
+            .sort();
+          if (versions.length > 0) {
+            return path.join(extBase, versions[versions.length - 1]);
+          }
+        } catch {}
+      }
     }
   }
   return null;
