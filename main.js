@@ -131,8 +131,8 @@ function applyWindowOpenHandler(wc) {
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
-            // Explicitly share the same session so auth cookies carry back
-            session: session.defaultSession,
+            // Share the same named session so auth cookies carry back to webviews
+            partition: 'persist:main',
           },
         },
       };
@@ -278,7 +278,7 @@ ipcMain.on('install-update', () => autoUpdater.quitAndInstall());
 async function createWindow() {
   await startLocalServer();
 
-  const ses = session.defaultSession;
+  const ses = session.fromPartition('persist:main');
   setupHeaderStripping(ses);
 
   const tvPath = find7TVExtension();
