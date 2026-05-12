@@ -239,6 +239,9 @@
   body.dragging iframe,
   body.dragging webview { pointer-events: none !important; }
   body.dragging * { user-select: none !important; }
+  /* Prevent auto-scroll when dragging/resizing panels toward the window edge.
+     Manual scroll wheel still works once drag ends (overflow-y: auto restores). */
+  body.dragging .grid-wrapper { overflow-y: hidden !important; }
 
   .grid-stack-item.ui-draggable-dragging,
   .grid-stack-item.ui-resizable-resizing {
@@ -921,12 +924,20 @@
   }
 
   // ── Webview viewport fix ──────────────────────────────────────────────────
-  // Electron's <webview> renderer process needs an explicit pixel height —
-  // CSS flex:1 and even position:absolute+inset:0 don't reliably propagate
-  // a concrete dimension to the guest renderer, so the page viewport stays
-  // small and only the top slice of content appears.  The fix: observe each
-  // .panel-body with a ResizeObserver and stamp its exact clientHeight onto
-  // the webview via an inline style, which Electron can unambiguously read.
+  // Electron's <webview> renderer process locks in its viewport size when the
+  // guest renderer process is first created — at the moment src is set.
+  // If clientHeight is 0 at that instant (JS style-batching, pre-paint timing),
+  // the guest renderer starts with a 0px viewport and stays cropped forever.
+  //
+  // Strategy:
+  //   1. Use data-src to delay loading until we have a real pixel height.
+  //   2. Set style.height, force a synchronous layout flush (void offsetHeight),
+  //      THEN set src — so Electron reads the correct clientHeight.
+  //   3. After dom-ready, ask the guest page its actual window.innerHeight via
+  //      executeJavaScript. If it doesn't match (common on startup due to race),
+  //      tear out the webview element entirely and rebuild it — this time with
+  //      height baked into style BEFORE src is ever touched, guaranteeing the
+  //      guest renderer process is created at the right size.
 
   const _webviewObservers = new Map(); // panelId → ResizeObserver
 
@@ -934,63 +945,71 @@
     const content = document.getElementById(`content-${id}`);
     if (!content) return;
     const body = content.querySelector('.panel-body');
-    const wv   = content.querySelector('webview');
+    let wv = content.querySelector('webview'); // mutable — may be replaced by reinit
     if (!body || !wv) return;
 
-    // Sync the webview's inline height to the panel-body's current pixel height.
-    // Called by both the ResizeObserver (future resizes) and the rAF init loop.
-    const syncHeight = () => {
+    const getHeight = () => {
       let h = body.getBoundingClientRect().height;
       if (h <= 0) {
-        // getBoundingClientRect returns 0 before first paint (common at startup).
-        // GridStack sets style.height on .grid-stack-item synchronously in addWidget,
-        // so we can compute panel-body height from it immediately without layout.
-        // --header-h = 24px, subtract 2px for the panel border.
         const gsItem = body.closest('.grid-stack-item');
         const itemH = gsItem ? (parseFloat(gsItem.style.height) || 0) : 0;
-        if (itemH > 0) h = itemH - 24 - 2;
+        if (itemH > 0) h = itemH - 24 - 2; // subtract header (24px) + border (2px)
       }
+      return h;
+    };
+
+    const syncHeight = () => {
+      const h = getHeight();
       if (h > 0) wv.style.height = h + 'px';
       return h;
     };
 
-    // Activate the webview src once we have a real height.
-    // Using data-src in the HTML delays loading until this point so the
-    // guest renderer process starts with the correct viewport size.
-    //
-    // CRITICAL: void wv.offsetHeight flushes the browser's pending style
-    // recalculation synchronously BEFORE setAttribute('src') runs. Without
-    // this flush, JS batches the style.height assignment and Electron reads
-    // clientHeight=0 when it creates the guest renderer process, locking
-    // the viewport at 0px regardless of what style.height is set to.
-    const activateSrc = () => {
-      if (wv.hasAttribute('src')) return; // already navigated
-      const src = wv.getAttribute('data-src');
-      if (!src) return;
-      void wv.offsetHeight; // flush layout → Electron reads correct height on next line
-      wv.setAttribute('src', src);
-    };
-
-    // ResizeObserver keeps height correct on every future GridStack / window resize
+    // ResizeObserver keeps height synced on every future GridStack / window resize.
+    // It observes body (the stable container), and syncHeight writes to wv (the
+    // closure variable) — so if wv is replaced by reinit, the new element gets
+    // updated correctly without re-subscribing.
     const ro = new ResizeObserver(syncHeight);
     ro.observe(body);
     _webviewObservers.set(id, ro);
 
-    // Safety net: once the guest page DOM is ready, force a drastic resize
-    // (1px → full height) so Electron sends a definitive SetSize IPC to the
-    // guest renderer. A 1px delta is too subtle; dropping to 1 guarantees
-    // the renderer receives and applies the correct viewport height.
-    wv.addEventListener('dom-ready', () => {
-      const h = body.getBoundingClientRect().height;
-      if (h > 0) {
-        wv.style.height = '1px';
-        requestAnimationFrame(() => { wv.style.height = h + 'px'; });
-      }
-    }, { once: true });
+    // After the guest page reports dom-ready, verify its actual viewport height
+    // via executeJavaScript. If Electron gave it the wrong size (race condition
+    // at startup), replace the webview element entirely. The replacement has its
+    // style.height set BEFORE src so the guest renderer process is created with
+    // the correct viewport from the very first frame.
+    const checkAndReinit = async () => {
+      if (!body.isConnected) return;
+      const h = getHeight();
+      if (h <= 0) return;
+      let guestH = 0;
+      try { guestH = await wv.executeJavaScript('window.innerHeight'); } catch {}
+      if (Math.abs(guestH - h) <= 20) return; // viewport is correct — nothing to do
+      // Viewport mismatch — tear out and rebuild with correct height baked in
+      const src       = wv.src || wv.getAttribute('data-src') || '';
+      const partition = wv.getAttribute('partition') || '';
+      wv.remove();
+      const nw = document.createElement('webview');
+      nw.setAttribute('allowpopups', '');
+      if (partition) nw.setAttribute('partition', partition);
+      nw.style.cssText = `position:absolute;top:0;left:0;right:0;height:${h}px;border:0;display:block;`;
+      body.appendChild(nw);
+      void nw.offsetHeight; // flush layout so Electron reads correct clientHeight
+      nw.setAttribute('src', src);
+      wv = nw; // update closure so syncHeight / future calls target new element
+    };
+
+    const activateSrc = () => {
+      if (wv.hasAttribute('src')) return;
+      const src = wv.getAttribute('data-src');
+      if (!src) return;
+      syncHeight();           // stamp height before flush
+      void wv.offsetHeight;   // force synchronous layout recalc
+      wv.setAttribute('src', src);
+      wv.addEventListener('dom-ready', checkAndReinit, { once: true });
+    };
 
     // rAF retry loop: GridStack may not have applied pixel dimensions yet at
-    // addWidget time (especially for panels restored from saved layout on startup).
-    // Retry each frame until we get h > 0, then activate the src.
+    // addWidget time (especially panels restored from saved layout on startup).
     let attempts = 0;
     const tryInit = () => {
       const h = syncHeight();
@@ -999,7 +1018,7 @@
       } else if (++attempts < 20) {
         requestAnimationFrame(tryInit);
       } else {
-        activateSrc(); // fallback: load even if height is still 0
+        activateSrc(); // fallback: load even if height detection failed
       }
     };
     requestAnimationFrame(tryInit);
