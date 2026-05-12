@@ -187,10 +187,12 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'Add Panel…',           accelerator: 'CmdOrCtrl+N', click: js('addPanelDialog()') },
+        { label: 'Add Panel…',           accelerator: 'CmdOrCtrl+N',  click: js('addPanelDialog()') },
         { label: 'Reopen Closed Panel',  submenu: closedSubmenu },
         { type: 'separator' },
-        { label: 'Quit',                 accelerator: 'Alt+F4', click: () => app.quit() },
+        { label: 'Settings…',            accelerator: 'CmdOrCtrl+,',  click: js('openSettings()') },
+        { type: 'separator' },
+        { label: 'Quit',                 accelerator: 'Alt+F4',        click: () => app.quit() },
       ],
     },
     {
@@ -203,10 +205,9 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { label: 'Reload All Panels',    accelerator: 'CmdOrCtrl+Shift+R', click: js('reloadAll()') },
+        { label: 'Reload All Panels',      accelerator: 'CmdOrCtrl+Shift+R', click: js('reloadAll()') },
         { type: 'separator' },
-        { label: 'Toggle Lock',          accelerator: 'CmdOrCtrl+L', click: js('toggleLock()') },
-        { label: 'Settings…',            accelerator: 'CmdOrCtrl+,', click: js('openSettings()') },
+        { label: 'Toggle Lock',            accelerator: 'CmdOrCtrl+L',       click: js('toggleLock()') },
         { type: 'separator' },
         { label: 'Toggle Developer Tools', accelerator: 'CmdOrCtrl+Shift+I',
           click: () => win.webContents.toggleDevTools() },
@@ -292,6 +293,18 @@ async function createWindow() {
 app.on('web-contents-created', (_e, wc) => {
   setupHeaderStripping(wc.session);
   applyWindowOpenHandler(wc);
+
+  // Intercept same-tab navigation inside embedded webviews.
+  // Auth domains (Twitch, StreamElements, etc.) are allowed to navigate freely
+  // so OAuth redirect chains work.  Everything else opens in the system browser
+  // so clicking a URL posted in chat doesn't replace the panel.
+  wc.on('will-navigate', (event, url) => {
+    if (wc === mainWin?.webContents) return; // main window: always allow
+    if (url.startsWith('http://localhost:'))  return; // local dev server: allow
+    if (isTrustedAuthDomain(url))             return; // auth flows: stay in Electron
+    event.preventDefault();
+    shell.openExternal(url);
+  });
 });
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────

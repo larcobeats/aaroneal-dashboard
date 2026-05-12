@@ -88,16 +88,40 @@
     display: none !important;
   }
 
+  /* Edge handles — wider hit area */
   .grid-stack-item > .ui-resizable-e,
-  .grid-stack-item > .ui-resizable-w { width: 6px; }
+  .grid-stack-item > .ui-resizable-w { width: 8px; }
   .grid-stack-item > .ui-resizable-n,
-  .grid-stack-item > .ui-resizable-s { height: 6px; }
+  .grid-stack-item > .ui-resizable-s { height: 8px; }
+
+  /* Corner handles */
   .grid-stack-item > .ui-resizable-se,
   .grid-stack-item > .ui-resizable-sw,
   .grid-stack-item > .ui-resizable-ne,
   .grid-stack-item > .ui-resizable-nw {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
+    z-index: 10;
+  }
+
+  /* SE corner: subtle triangle indicator, hidden unless panel is hovered */
+  .grid-stack-item > .ui-resizable-se {
+    background: transparent;
+    bottom: 0;
+    right: 0;
+    cursor: se-resize;
+    transition: background 0.15s ease;
+  }
+  .grid-stack-item:not(body.locked *):hover > .ui-resizable-se {
+    background: linear-gradient(135deg, transparent 50%, rgba(170, 212, 255, 0.25) 50%);
+  }
+
+  /* Edge handles: thin accent stripe on hover */
+  .grid-stack-item:not(body.locked *):hover > .ui-resizable-e {
+    background: linear-gradient(to right, transparent 40%, rgba(170, 212, 255, 0.12));
+  }
+  .grid-stack-item:not(body.locked *):hover > .ui-resizable-s {
+    background: linear-gradient(to bottom, transparent 40%, rgba(170, 212, 255, 0.12));
   }
 
   /* ===== PANEL HEADER ===== */
@@ -188,6 +212,9 @@
     height: 100% !important;
     border: 0;
     display: block;
+    /* GPU compositing layer prevents Electron webview repaint glitches on resize */
+    transform: translateZ(0);
+    will-change: transform;
   }
 
   /* ===== GRIDSTACK BEHAVIOR ===== */
@@ -381,9 +408,6 @@
   body.locked .panel-header { cursor: default; }
   body.locked .grid-stack-item > .ui-resizable-handle { display: none !important; }
 
-  .grid-stack-item:hover > .ui-resizable-se {
-    background: linear-gradient(135deg, transparent 50%, rgba(170, 212, 255, 0.15) 50%);
-  }
 
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: var(--panel); }
@@ -780,15 +804,12 @@
     });
 
     grid.on('dragstart', () => document.body.classList.add('dragging'));
-    grid.on('dragstop', () => {
-      document.body.classList.remove('dragging');
-      saveLayout();
-    });
+    grid.on('dragstop',  () => { document.body.classList.remove('dragging'); saveLayout(); });
 
-    setupTilingResize();
+    setupResizeHandlers();
 
-    grid.on('change', saveLayout);
-    grid.on('added removed', saveLayout);
+    grid.on('change',          saveLayout);
+    grid.on('added removed',   saveLayout);
 
     let resizeTimer;
     window.addEventListener('resize', () => {
@@ -799,132 +820,51 @@
     });
   }
 
-  // ============ TILING RESIZE ============
-  let _resizeStart = null;
-  let _resizePartner = null;
+  // ============ RESIZE EVENTS ============
+  // Simplified: GridStack handles its own collision/float logic.
+  // We only need to hook resizestart/resizestop for pointer-events and
+  // the webview repaint fix.
+  //
+  // Root cause of the old "tiling resize" code: it tried to mirror adjacent
+  // panel resizes, but the logic was brittle — a single off-by-one in grid
+  // units would cause panels to jump or disappear.  Removed entirely.
+  // Users can resize panels independently; GridStack's built-in float mode
+  // lets them overlap or snap as needed without forced coupling.
 
-  function setupTilingResize() {
-    grid.on('resizestart', (event, el) => {
+  function setupResizeHandlers() {
+    grid.on('resizestart', () => {
       document.body.classList.add('dragging');
-      const node = el.gridstackNode;
-      if (!node) return;
-
-      _resizeStart = {
-        id: node.id,
-        x: node.x, y: node.y, w: node.w, h: node.h,
-        others: grid.engine.nodes
-          .filter(n => n.id !== node.id)
-          .map(n => ({ id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, el: n.el }))
-      };
-      _resizePartner = null;
     });
 
-    grid.on('resize', (event, el) => {
-      if (!_resizeStart) return;
-      const node = el.gridstackNode;
-      if (!node || node.id !== _resizeStart.id) return;
-
-      const dx = node.x - _resizeStart.x;
-      const dw = node.w - _resizeStart.w;
-      const dy = node.y - _resizeStart.y;
-      const dh = node.h - _resizeStart.h;
-
-      const RIGHT  = Math.abs(dx) < 0.5 && Math.abs(dw) > 0;
-      const LEFT   = Math.abs(dx) > 0 && Math.abs(dx + dw) < 0.5 && Math.abs(dw) > 0;
-      const BOTTOM = Math.abs(dy) < 0.5 && Math.abs(dh) > 0;
-      const TOP    = Math.abs(dy) > 0 && Math.abs(dy + dh) < 0.5 && Math.abs(dh) > 0;
-
-      let partner = null;
-      let side = null;
-
-      if (RIGHT)       { partner = findClosestNeighbor(node, _resizeStart.others, 'right');  side = 'right';  }
-      else if (LEFT)   { partner = findClosestNeighbor(node, _resizeStart.others, 'left');   side = 'left';   }
-      else if (BOTTOM) { partner = findClosestNeighbor(node, _resizeStart.others, 'bottom'); side = 'bottom'; }
-      else if (TOP)    { partner = findClosestNeighbor(node, _resizeStart.others, 'top');    side = 'top';    }
-
-      if (_resizePartner && (!partner || partner.id !== _resizePartner.id)) {
-        restorePartnerToStart(_resizePartner);
-        _resizePartner = null;
-      }
-
-      if (!partner) return;
-
-      if (!_resizePartner || _resizePartner.id !== partner.id) {
-        _resizePartner = { ...partner };
-      }
-
-      let newX = partner.x, newY = partner.y, newW = partner.w, newH = partner.h;
-
-      if      (side === 'right')  { newX = partner.x + dw; newW = partner.w - dw; }
-      else if (side === 'left')   { newW = partner.w + dx; }
-      else if (side === 'bottom') { newY = partner.y + dh; newH = partner.h - dh; }
-      else if (side === 'top')    { newH = partner.h + dy; }
-
-      if (newW < 1 || newH < 1) return;
-
-      if (newX === partner.x && newY === partner.y && newW === partner.w && newH === partner.h) return;
-
-      grid.update(partner.el, { x: newX, y: newY, w: newW, h: newH });
-    });
-
-    grid.on('resizestop', () => {
+    grid.on('resizestop', (_event, el) => {
       document.body.classList.remove('dragging');
-      _resizeStart = null;
-      _resizePartner = null;
+      // Fix: after GridStack updates the cell dimensions the Electron webview
+      // compositor doesn't always re-composite the layer, leaving content
+      // cropped at the top.  Briefly nudging width by 1 px forces a repaint
+      // without reloading the page.
+      el.querySelectorAll('webview').forEach(wv => {
+        if (!wv.isConnected) return;
+        const orig = wv.style.width;
+        wv.style.width = 'calc(100% - 1px)';
+        requestAnimationFrame(() => { wv.style.width = orig; });
+      });
       saveLayout();
     });
   }
 
-  function findClosestNeighbor(resizedNode, others, side) {
-    const r = resizedNode;
-    const rLeft = r.x, rRight = r.x + r.w;
-    const rTop  = r.y, rBottom = r.y + r.h;
-    const rangeOverlaps = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
-
-    let candidates = [];
-    for (const o of others) {
-      const oLeft = o.x, oRight = o.x + o.w;
-      const oTop  = o.y, oBottom = o.y + o.h;
-
-      if (side === 'right') {
-        if (oLeft < rRight) continue;
-        if (!rangeOverlaps(rTop, rBottom, oTop, oBottom)) continue;
-        candidates.push({ ...o, dist: oLeft - rRight });
-      } else if (side === 'left') {
-        if (oRight > rLeft) continue;
-        if (!rangeOverlaps(rTop, rBottom, oTop, oBottom)) continue;
-        candidates.push({ ...o, dist: rLeft - oRight });
-      } else if (side === 'bottom') {
-        if (oTop < rBottom) continue;
-        if (!rangeOverlaps(rLeft, rRight, oLeft, oRight)) continue;
-        candidates.push({ ...o, dist: oTop - rBottom });
-      } else if (side === 'top') {
-        if (oBottom > rTop) continue;
-        if (!rangeOverlaps(rLeft, rRight, oLeft, oRight)) continue;
-        candidates.push({ ...o, dist: rTop - oBottom });
-      }
+  // ============ PANEL RESIZE OBSERVER ============
+  // Watches each panel-body independently so the repaint fix also fires on
+  // window resize (not just GridStack drag-resize).
+  const panelResizeObserver = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      entry.target.querySelectorAll('webview').forEach(wv => {
+        if (!wv.isConnected) return;
+        const orig = wv.style.width;
+        wv.style.width = 'calc(100% - 1px)';
+        requestAnimationFrame(() => { wv.style.width = orig; });
+      });
     }
-
-    if (candidates.length === 0) return null;
-
-    candidates.sort((a, b) => {
-      if (Math.abs(a.dist - b.dist) > 0.1) return a.dist - b.dist;
-      const overlapAmount = (n) => {
-        if (side === 'right' || side === 'left') {
-          return Math.min(rBottom, n.y + n.h) - Math.max(rTop, n.y);
-        }
-        return Math.min(rRight, n.x + n.w) - Math.max(rLeft, n.x);
-      };
-      return overlapAmount(b) - overlapAmount(a);
-    });
-
-    return candidates[0];
-  }
-
-  function restorePartnerToStart(snap) {
-    if (!snap || !snap.el) return;
-    grid.update(snap.el, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
-  }
+  });
 
   // ============ PANEL HTML ============
   function buildPanelHTML(id, config) {
@@ -939,6 +879,7 @@
             <span class="title-text">${escapeHtml(title)}</span>
           </div>
           <div class="actions">
+            <button onclick="editPanelUrl('${id}')" title="Edit URL">&#9998;</button>
             <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
             <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
           </div>
@@ -958,6 +899,7 @@
           </div>
           <div class="actions">
             <button onclick="toggleStreamMute('${id}')" title="Toggle mute"><span class="mute-icon">&#128263;</span></button>
+            <button onclick="editPanelUrl('${id}')" title="Edit URL">&#9998;</button>
             <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
             <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
           </div>
@@ -975,6 +917,7 @@
           <span class="title-text">${escapeHtml(title)}</span>
         </div>
         <div class="actions">
+          <button onclick="editPanelUrl('${id}')" title="Edit URL">&#9998;</button>
           <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
           <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
         </div>
@@ -1006,19 +949,16 @@
 
     grid.addWidget(widget);
     panels[id] = config;
-
-    // Attach zoom handler for webview panels so content scales correctly
-    if (config.type === 'webview') {
-      requestAnimationFrame(() => {
-        const wv = document.querySelector(`#content-${id} webview`);
-        if (wv) {
-          wv.addEventListener('dom-ready', () => {
-            // Slight zoom-out so chat input bar and events ribbon aren't clipped
-            wv.setZoomFactor(0.9);
-          });
-        }
-      });
-    }
+    // Observe panel body for size changes so webviews repaint correctly.
+    // Root cause of cropping: Electron's webview process doesn't always
+    // recalculate its visible rect after the containing element is resized
+    // by GridStack.  Observing the panel-body and nudging the webview's
+    // size by 1 px then back triggers Chromium to re-composite the layer
+    // without a full reload.
+    requestAnimationFrame(() => {
+      const body = document.querySelector(`#content-${id} .panel-body`);
+      if (body) panelResizeObserver.observe(body);
+    });
 
     saveLayout();
   }
@@ -1145,6 +1085,23 @@
     muteIcon.textContent = isMuted ? '&#128266;' : '&#128263;';
   }
 
+  function editPanelUrl(id) {
+    const config = panels[id];
+    if (!config) return;
+    const input = prompt('Panel URL:', config.url);
+    if (!input || !input.trim()) return;
+    const newUrl = input.trim();
+    config.url = newUrl;
+    // Redirect the live embed without rebuilding the whole panel
+    // (preserves panel position, size, and any loaded session state)
+    const content = document.getElementById(`content-${id}`);
+    if (content) {
+      content.querySelectorAll('iframe').forEach(f  => { f.src = newUrl; });
+      content.querySelectorAll('webview').forEach(wv => { wv.src = newUrl; });
+    }
+    saveLayout();
+  }
+
   function reloadAll() {
     document.querySelectorAll('.grid-stack iframe').forEach(f => { f.src = f.src; });
     document.querySelectorAll('.grid-stack webview').forEach(wv => wv.reload());
@@ -1199,18 +1156,28 @@
       try {
         const nodes = JSON.parse(saved);
         if (nodes.length > 0) {
-          const validNodes = nodes.filter(n =>
-            n.config && n.x >= 0 && n.y >= 0 && n.w > 0 && n.h > 0 && n.x + n.w <= settings.columns
-          );
-          if (validNodes.length === nodes.length) {
-            validNodes.forEach(n => {
-              if (n.config && n.config.preset && PRESETS[n.config.preset]) {
-                const fresh = PRESETS[n.config.preset];
-                n.config.url = fresh.url;
-                n.config.type = fresh.type;
-              }
-              addPanel(n.id, n.config, { x: n.x, y: n.y, w: n.w, h: n.h });
-            });
+          // Clamp panels that exceed the current column count rather than
+          // discarding the whole layout (previous behaviour wiped everything
+          // if even a single panel was slightly out of bounds).
+          const usable = nodes.filter(n => n.config && n.w > 0 && n.h > 0).map(n => {
+            const node = { ...n };
+            if (node.x < 0) node.x = 0;
+            if (node.y < 0) node.y = 0;
+            if (node.x + node.w > settings.columns) {
+              node.w = settings.columns - node.x;
+              if (node.w < 1) { node.x = 0; node.w = Math.min(settings.columns, 4); }
+            }
+            // Always refresh URL + type from current PRESETS so stale saved
+            // values (e.g. old iframe for activity-feed) are never re-used.
+            if (node.config.preset && PRESETS[node.config.preset]) {
+              const fresh = PRESETS[node.config.preset];
+              node.config.url  = fresh.url;
+              node.config.type = fresh.type;
+            }
+            return node;
+          });
+          if (usable.length > 0) {
+            usable.forEach(n => addPanel(n.id, n.config, { x: n.x, y: n.y, w: n.w, h: n.h }));
             return;
           }
         }
