@@ -9,16 +9,24 @@
 
 <style>
   :root {
-    --bg: #0e0e10;
-    --panel: #18181b;
-    --panel-2: #1f1f23;
-    --border: #2a2a2e;
-    --text: #efeff1;
-    --text-dim: #adadb8;
-    --accent: #aad4ff;
-    --accent-glow: rgba(170, 212, 255, 0.4);
-    --header-h: 24px;
-    --gap: 1px;
+    --bg:           #0c0c0f;
+    --surface:      #111116;
+    --panel:        #141418;
+    --panel-2:      #1b1b22;
+    --panel-hover:  #20202a;
+    --border:       #2a2a36;
+    --border-sub:   #1e1e28;
+    --text:         #eeeef4;
+    --text-dim:     #8888a0;
+    --text-muted:   #50505f;
+    --accent:       #7b8cff;
+    --accent-dim:   rgba(123, 140, 255, 0.14);
+    --accent-glow:  rgba(123, 140, 255, 0.3);
+    --danger:       #ff5264;
+    --danger-dim:   rgba(255, 82, 100, 0.12);
+    --toolbar-h:    36px;
+    --header-h:     28px;
+    --gap:          0px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,12 +38,79 @@
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
-    font-size: 11px;
+    font-size: 12px;
   }
+
+  /* ===== TOOLBAR ===== */
+  #toolbar {
+    height: var(--toolbar-h);
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 100;
+    user-select: none;
+  }
+
+  .toolbar-brand {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.3px;
+    padding: 0 8px 0 4px;
+    white-space: nowrap;
+  }
+
+  .tb-divider {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+    margin: 0 2px;
+    flex-shrink: 0;
+  }
+
+  .tb-spacer { flex: 1; }
+
+  .tb-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 4px;
+    font-family: inherit;
+    transition: color 0.1s ease, background 0.1s ease, border-color 0.1s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1;
+  }
+  .tb-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .tb-btn.active {
+    color: var(--accent);
+    background: var(--accent-dim);
+    border-color: rgba(123, 140, 255, 0.25);
+  }
+  .tb-btn.primary {
+    background: var(--accent);
+    color: #0c0c0f;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .tb-btn.primary:hover { opacity: 0.88; }
 
   /* ===== GRID ===== */
   .grid-wrapper {
-    height: 100vh;
+    height: calc(100vh - var(--toolbar-h));
     width: 100vw;
     overflow: hidden;
     background: var(--bg);
@@ -51,7 +126,7 @@
   .grid-stack-item-content {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 6px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -59,6 +134,7 @@
     inset: 0;
     width: 100%;
     height: 100%;
+    transition: border-color 0.15s ease;
   }
 
   .grid-stack-item-content,
@@ -67,7 +143,11 @@
     min-width: 0;
   }
 
-  /* HIDE GRIDSTACK RESIZE HANDLES */
+  .grid-stack-item:hover > .grid-stack-item-content {
+    border-color: #38384a;
+  }
+
+  /* ===== RESIZE HANDLES ===== */
   .grid-stack-item > .ui-resizable-handle {
     background-image: none !important;
     background: transparent !important;
@@ -83,27 +163,18 @@
   .grid-stack-item > .ui-resizable-se::after,
   .grid-stack-item > .ui-resizable-sw::after,
   .grid-stack-item > .ui-resizable-ne::after,
-  .grid-stack-item > .ui-resizable-nw::after {
-    display: none !important;
-  }
+  .grid-stack-item > .ui-resizable-nw::after { display: none !important; }
 
-  /* Edge handles — wider hit area */
   .grid-stack-item > .ui-resizable-e,
   .grid-stack-item > .ui-resizable-w { width: 8px; }
   .grid-stack-item > .ui-resizable-n,
   .grid-stack-item > .ui-resizable-s { height: 8px; }
 
-  /* Corner handles */
   .grid-stack-item > .ui-resizable-se,
   .grid-stack-item > .ui-resizable-sw,
   .grid-stack-item > .ui-resizable-ne,
-  .grid-stack-item > .ui-resizable-nw {
-    width: 14px;
-    height: 14px;
-    z-index: 10;
-  }
+  .grid-stack-item > .ui-resizable-nw { width: 14px; height: 14px; z-index: 10; }
 
-  /* Explicit cursors for every resize direction */
   .grid-stack-item > .ui-resizable-n  { cursor: n-resize; }
   .grid-stack-item > .ui-resizable-s  { cursor: s-resize; }
   .grid-stack-item > .ui-resizable-e  { cursor: e-resize; }
@@ -113,15 +184,14 @@
   .grid-stack-item > .ui-resizable-se { cursor: se-resize; bottom: 0; right: 0; transition: background 0.15s ease; }
   .grid-stack-item > .ui-resizable-sw { cursor: sw-resize; }
 
-  /* Corner/edge visual hints — only when NOT in locked mode */
   .grid-stack-item:hover > .ui-resizable-se {
-    background: linear-gradient(135deg, transparent 50%, rgba(170, 212, 255, 0.25) 50%);
+    background: linear-gradient(135deg, transparent 50%, rgba(123, 140, 255, 0.3) 50%);
   }
   .grid-stack-item:hover > .ui-resizable-e {
-    background: linear-gradient(to right, transparent 40%, rgba(170, 212, 255, 0.12));
+    background: linear-gradient(to right, transparent 40%, rgba(123, 140, 255, 0.1));
   }
   .grid-stack-item:hover > .ui-resizable-s {
-    background: linear-gradient(to bottom, transparent 40%, rgba(170, 212, 255, 0.12));
+    background: linear-gradient(to bottom, transparent 40%, rgba(123, 140, 255, 0.1));
   }
   body.locked .grid-stack-item > .ui-resizable-handle { display: none !important; }
 
@@ -129,23 +199,35 @@
   .panel-header {
     height: var(--header-h);
     background: var(--panel-2);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-sub);
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 8px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    padding: 0 6px 0 0;
+    font-size: 11px;
+    font-weight: 500;
     color: var(--text-dim);
     flex-shrink: 0;
     cursor: move;
     user-select: none;
-    transition: background 0.1s ease;
+    transition: background 0.1s ease, color 0.1s ease;
   }
+
   body:not(.locked) .panel-header:hover {
-    background: #252529;
+    background: var(--panel-hover);
+    color: var(--text);
+  }
+
+  body.locked .panel-header { cursor: default; }
+
+  /* Colored left stripe — identifies panel type at a glance */
+  .panel-header .type-stripe {
+    width: 3px;
+    height: 100%;
+    flex-shrink: 0;
+    margin-right: 9px;
+    background: var(--accent);
+    opacity: 0.8;
+    transition: opacity 0.1s ease;
   }
 
   .panel-header .title-group {
@@ -153,15 +235,7 @@
     align-items: center;
     gap: 6px;
     overflow: hidden;
-  }
-
-  .panel-header .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 6px var(--accent-glow);
-    flex-shrink: 0;
+    flex: 1;
   }
 
   .panel-header .title-text {
@@ -170,43 +244,60 @@
     text-overflow: ellipsis;
   }
 
+  /* Actions are hidden until header hover — keeps the header a clean drag zone */
   .panel-header .actions {
     display: flex;
-    gap: 3px;
+    gap: 1px;
     flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s ease;
   }
+
+  .panel-header:hover .actions { opacity: 1; }
 
   .panel-header button {
     background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-dim);
+    border: 0;
+    color: var(--text-muted);
     cursor: pointer;
-    padding: 2px 7px;
-    font-size: 11px;
-    border-radius: 2px;
-    transition: all 0.1s ease;
+    padding: 3px 7px;
+    font-size: 12px;
+    border-radius: 3px;
+    transition: color 0.1s ease, background 0.1s ease;
     font-family: inherit;
     line-height: 1;
-    min-width: 22px;
+    min-width: 24px;
     text-align: center;
   }
 
   .panel-header button:hover {
-    color: var(--accent);
-    background: rgba(170, 212, 255, 0.1);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.07);
   }
 
   .panel-header button.close-btn:hover {
-    color: #ff6b6b;
-    background: rgba(255, 107, 107, 0.1);
+    color: var(--danger);
+    background: var(--danger-dim);
   }
 
-  /* panel-body fills the remaining height below the panel header.
-     For iframe panels: the iframe lives inside and flexes to fill.
-     For BrowserView panels: the body is empty — a BrowserView in the main
-     process is positioned over it via getBoundingClientRect() bounds sent
-     over IPC.  The body itself just needs correct dimensions so the bounds
-     are accurate. */
+  /* Panel type stripe colors */
+  .panel-type-chat            .type-stripe { background: #9b6cff; }
+  .panel-type-activity-feed   .type-stripe { background: #3ecf6e; }
+  .panel-type-stream          .type-stripe { background: #ff5264; }
+  .panel-type-quick-actions   .type-stripe { background: #7b8cff; }
+  .panel-type-tikfinity-chat  .type-stripe { background: #ff7eb3; }
+  .panel-type-tikfinity-views .type-stripe { background: #ff7eb3; }
+  .panel-type-predictions     .type-stripe { background: #fbbf24; }
+  .panel-type-sub-goal        .type-stripe { background: #3ecf6e; }
+  .panel-type-stream-manager  .type-stripe { background: #7b8cff; }
+
+  /* Locked state — stripe turns amber across all panels */
+  body.locked .panel-header .type-stripe {
+    background: #f0a000 !important;
+    opacity: 1;
+  }
+
+  /* ===== PANEL BODY ===== */
   .panel-body {
     flex: 1 1 0;
     min-height: 0;
@@ -226,7 +317,7 @@
     display: block;
   }
 
-  /* ===== GRIDSTACK BEHAVIOR ===== */
+  /* ===== DRAG BEHAVIOR ===== */
   body.dragging iframe { pointer-events: none !important; }
   body.dragging * { user-select: none !important; }
 
@@ -240,40 +331,62 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.7);
+    background: rgba(0, 0, 0, 0.75);
     display: none;
     align-items: center;
     justify-content: center;
     z-index: 9999;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(6px);
   }
 
   .modal-overlay.show { display: flex; }
 
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.97) translateY(-8px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
+  }
+  .modal-overlay.show .modal { animation: modalIn 0.15s ease; }
+
   .modal {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 10px;
     width: 480px;
     max-width: 90vw;
     max-height: 85vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04);
   }
 
   .modal-header {
-    padding: 12px 16px;
+    padding: 14px 16px;
     background: var(--panel-2);
     border-bottom: 1px solid var(--border);
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  .modal-close-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    font-family: inherit;
+    transition: color 0.1s ease, background 0.1s ease;
+  }
+  .modal-close-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.07);
   }
 
   .modal-body {
@@ -286,10 +399,11 @@
     display: block;
     font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-dim);
-    margin-bottom: 4px;
-    margin-top: 14px;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    margin-top: 18px;
+    font-weight: 600;
   }
   .modal-body label:first-of-type { margin-top: 0; }
 
@@ -297,19 +411,21 @@
   .modal-body input[type="number"],
   .modal-body select {
     width: 100%;
-    background: var(--bg);
+    background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 6px 8px;
-    border-radius: 3px;
+    padding: 8px 10px;
+    border-radius: 5px;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
+    transition: border-color 0.1s ease, box-shadow 0.1s ease;
   }
 
   .modal-body input:focus,
   .modal-body select:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
   }
 
   .modal-body input[type="range"] {
@@ -320,7 +436,7 @@
   .range-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
   .range-row input[type="range"] { flex: 1; }
   .range-row .range-value {
@@ -329,19 +445,21 @@
     font-weight: 600;
     min-width: 40px;
     text-align: right;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     margin-top: 14px;
     cursor: pointer;
   }
   .checkbox-row input[type="checkbox"] {
     accent-color: var(--accent);
     cursor: pointer;
+    width: 14px;
+    height: 14px;
   }
   .checkbox-row label {
     margin: 0;
@@ -349,34 +467,42 @@
     text-transform: none;
     letter-spacing: 0;
     color: var(--text);
-    font-size: 11px;
+    font-size: 12px;
   }
 
+  /* ===== PRESET CARDS ===== */
   .preset-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
-    margin-top: 6px;
+    margin-top: 8px;
   }
 
-  .preset-btn {
-    background: var(--panel-2);
+  .preset-card {
+    background: var(--surface);
     border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px;
-    border-radius: 3px;
+    color: var(--text-dim);
+    padding: 12px 8px;
+    border-radius: 7px;
     cursor: pointer;
-    font-size: 10px;
     font-family: inherit;
-    text-align: left;
-    transition: all 0.15s ease;
+    text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
   }
-
-  .preset-btn:hover {
+  .preset-card:hover {
     border-color: var(--accent);
-    color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--text);
   }
+  .preset-card .preset-icon { font-size: 20px; line-height: 1; }
+  .preset-card .preset-name { font-size: 11px; font-weight: 600; color: var(--text); }
+  .preset-card .preset-desc { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
 
+  /* ===== MODAL FOOTER ===== */
   .modal-footer {
     padding: 12px 16px;
     background: var(--panel-2);
@@ -389,71 +515,60 @@
   .modal-footer button {
     background: transparent;
     border: 1px solid var(--border);
-    color: var(--text);
-    padding: 6px 14px;
-    border-radius: 3px;
+    color: var(--text-dim);
+    padding: 7px 16px;
+    border-radius: 5px;
     cursor: pointer;
     font-family: inherit;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 500;
+    transition: color 0.1s ease, border-color 0.1s ease, background 0.1s ease;
   }
-
+  .modal-footer button:hover {
+    color: var(--text);
+    border-color: #3a3a4a;
+    background: rgba(255, 255, 255, 0.04);
+  }
   .modal-footer button.primary {
     background: var(--accent);
-    color: var(--bg);
+    color: #0c0c0f;
     border-color: var(--accent);
+    font-weight: 600;
   }
+  .modal-footer button.primary:hover { opacity: 0.88; }
 
-  .modal-footer button:hover { opacity: 0.85; }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  body.locked .panel-header { cursor: default; }
-
-
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-track { background: var(--panel); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3a3a3e; }
-
+  /* ===== MODAL SECTIONS ===== */
   .modal-body hr {
     border: 0;
     border-top: 1px solid var(--border);
-    margin: 18px 0 4px;
+    margin: 20px 0 4px;
   }
 
   .modal-body .section-title {
-    font-size: 11px;
+    font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--accent);
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
     font-weight: 700;
     margin-top: 8px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
   }
 
-  /* ===== MODAL CLOSE BUTTON ===== */
-  .modal-close-btn {
-    background: transparent;
-    border: 0;
+  /* ===== SETTINGS RESET BUTTON ===== */
+  .preset-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
     color: var(--text-dim);
+    padding: 8px 12px;
+    border-radius: 5px;
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
-    border-radius: 3px;
-    line-height: 1;
+    font-size: 11px;
     font-family: inherit;
-    transition: color 0.1s ease, background 0.1s ease;
+    text-align: center;
+    width: 100%;
+    transition: border-color 0.15s ease, color 0.15s ease;
   }
-  .modal-close-btn:hover {
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.06);
-  }
+  .preset-btn:hover { border-color: var(--accent); color: var(--text); }
 
   /* ===== FOCUS RINGS ===== */
   button:focus-visible,
@@ -463,20 +578,11 @@
     outline-offset: 1px;
   }
 
-  /* ===== MODAL ENTRANCE ANIMATION ===== */
-  @keyframes modalSlideIn {
-    from { opacity: 0; transform: scale(0.97) translateY(-8px); }
-    to   { opacity: 1; transform: scale(1)    translateY(0); }
-  }
-  .modal-overlay.show .modal {
-    animation: modalSlideIn 0.15s ease;
-  }
-
-  /* ===== LOCKED STATE ===== */
-  body.locked .panel-header .dot {
-    background: #f0a000;
-    box-shadow: 0 0 6px rgba(240, 160, 0, 0.4);
-  }
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a4a; }
 
   /* ===== UPDATE PROGRESS BAR ===== */
   .update-progress {
@@ -485,16 +591,34 @@
     background: var(--border);
     border-radius: 3px;
     overflow: hidden;
-    margin-top: 4px;
+    margin-top: 8px;
   }
   .update-progress-fill {
     height: 100%;
     background: var(--accent);
     transition: width 0.3s ease;
   }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
 </style>
 </head>
 <body>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <span class="toolbar-brand">◈ aaroneal</span>
+  <div class="tb-divider"></div>
+  <button class="tb-btn primary" onclick="addPanelDialog()">+ Add Panel</button>
+  <button class="tb-btn" id="tb-lock" onclick="toggleLock()">⊘ Lock Layout</button>
+  <button class="tb-btn" onclick="reloadAll()" title="Ctrl+Shift+R">↺ Reload All</button>
+  <div class="tb-divider"></div>
+  <button class="tb-btn" onclick="saveCurrentAsLayout()">↓ Save Layout</button>
+  <div class="tb-spacer"></div>
+  <button class="tb-btn" onclick="openSettings()" title="Ctrl+,">⚙ Settings</button>
+</div>
 
 <!-- GRID -->
 <div class="grid-wrapper" id="grid-wrapper">
@@ -511,20 +635,59 @@
     <div class="modal-body">
       <label>Quick Presets</label>
       <div class="preset-grid">
-        <button class="preset-btn" onclick="addPresetPanel('quick-actions')">&#9889; Quick Actions</button>
-        <button class="preset-btn" onclick="addPresetPanel('activity-feed')">&#128202; Activity Feed</button>
-        <button class="preset-btn" onclick="addPresetPanel('chat')">&#128172; Chat (Twitch+7TV)</button>
-        <button class="preset-btn" onclick="addPresetPanel('stream')">&#128250; Live Preview</button>
-        <button class="preset-btn" onclick="addPresetPanel('tikfinity-chat')">&#127925; TikTok Chat</button>
-        <button class="preset-btn" onclick="addPresetPanel('tikfinity-views')">&#128065; TikTok Views</button>
-        <button class="preset-btn" onclick="addPresetPanel('predictions')">&#127919; Predictions</button>
-        <button class="preset-btn" onclick="addPresetPanel('sub-goal')">&#127873; Sub Goal</button>
-        <button class="preset-btn" onclick="addPresetPanel('stream-manager')">&#127897;&#65039; Stream Manager</button>
+        <button class="preset-card" onclick="addPresetPanel('chat')">
+          <span class="preset-icon">💬</span>
+          <span class="preset-name">Chat</span>
+          <span class="preset-desc">Twitch + 7TV</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('stream')">
+          <span class="preset-icon">📺</span>
+          <span class="preset-name">Live Preview</span>
+          <span class="preset-desc">Twitch Player</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('activity-feed')">
+          <span class="preset-icon">📊</span>
+          <span class="preset-name">Activity Feed</span>
+          <span class="preset-desc">StreamElements</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('quick-actions')">
+          <span class="preset-icon">⚡</span>
+          <span class="preset-name">Quick Actions</span>
+          <span class="preset-desc">Twitch Dashboard</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('predictions')">
+          <span class="preset-icon">🎯</span>
+          <span class="preset-name">Predictions</span>
+          <span class="preset-desc">Twitch</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('stream-manager')">
+          <span class="preset-icon">📻</span>
+          <span class="preset-name">Stream Manager</span>
+          <span class="preset-desc">Twitch Dashboard</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('tikfinity-chat')">
+          <span class="preset-icon">🎵</span>
+          <span class="preset-name">TikTok Chat</span>
+          <span class="preset-desc">TikFinity</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('tikfinity-views')">
+          <span class="preset-icon">👁</span>
+          <span class="preset-name">TikTok Views</span>
+          <span class="preset-desc">TikFinity</span>
+        </button>
+        <button class="preset-card" onclick="addPresetPanel('sub-goal')">
+          <span class="preset-icon">🎁</span>
+          <span class="preset-name">Sub Goal</span>
+          <span class="preset-desc">StreamElements</span>
+        </button>
       </div>
 
-      <label style="margin-top:20px;">Custom URL Panel</label>
-      <input type="text" id="custom-name" placeholder="Panel name (e.g. My Custom Widget)">
-      <input type="text" id="custom-url" placeholder="https://..." style="margin-top:6px;">
+      <hr>
+      <div class="section-title">Custom URL Panel</div>
+      <label>Panel Name</label>
+      <input type="text" id="custom-name" placeholder="e.g. My Custom Widget">
+      <label>URL</label>
+      <input type="text" id="custom-url" placeholder="https://...">
     </div>
     <div class="modal-footer">
       <button onclick="closeAddModal()">Cancel</button>
@@ -559,7 +722,7 @@
       <label>Panel Gap (pixels)</label>
       <div class="range-row">
         <input type="range" id="setting-gap" min="0" max="12" step="1">
-        <span class="range-value" id="setting-gap-val">1</span>
+        <span class="range-value" id="setting-gap-val">0</span>
       </div>
 
       <hr>
@@ -567,7 +730,7 @@
 
       <div class="checkbox-row">
         <input type="checkbox" id="setting-float">
-        <label for="setting-float">Float (panels can be placed anywhere, won't auto-stack)</label>
+        <label for="setting-float">Float mode — panels can overlap, won't auto-stack</label>
       </div>
 
       <div class="checkbox-row">
@@ -577,7 +740,7 @@
 
       <hr>
       <div class="section-title">Reset</div>
-      <button class="preset-btn" style="text-align:center; width:100%;" onclick="resetSettings()">Reset settings to defaults</button>
+      <button class="preset-btn" onclick="resetSettings()">Reset settings to defaults</button>
 
     </div>
     <div class="modal-footer">
@@ -594,7 +757,7 @@
       <span id="update-modal-title">Updates</span>
       <button class="modal-close-btn" onclick="closeUpdateModal()">&#10005;</button>
     </div>
-    <div class="modal-body" id="update-modal-body" style="padding:24px 16px;text-align:center;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+    <div class="modal-body" id="update-modal-body" style="padding:28px 20px;text-align:center;min-height:90px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
     </div>
     <div class="modal-footer" id="update-modal-footer" style="justify-content:center;"></div>
   </div>
@@ -604,7 +767,7 @@
 <div class="modal-overlay" id="save-layout-modal">
   <div class="modal" style="width:400px;">
     <div class="modal-header">
-      <span>Save Current Layout</span>
+      <span>Save Layout</span>
       <button class="modal-close-btn" onclick="closeSaveLayoutModal()">&#10005;</button>
     </div>
     <div class="modal-body">
@@ -674,7 +837,7 @@
       title: 'Chat',
       url: `https://www.twitch.tv/popout/${CHANNEL}/chat?popout=`,
       w: 4, h: 12,
-      type: 'webview'  // rendered as <webview> so 7TV extension can inject
+      type: 'webview'  // rendered as BrowserView so 7TV extension can inject
     },
     'stream': {
       title: 'Live Preview',
@@ -786,7 +949,6 @@
     const rowsChanged = pendingSettings.rows !== settings.rows;
     const needsReload = colsChanged || rowsChanged;
 
-    // Flush current positions before scaling so we scale the live state
     saveLayout();
     if (colsChanged) scaleLayoutColumns(settings.columns, pendingSettings.columns);
     if (rowsChanged) scaleLayoutRows(settings.rows, pendingSettings.rows);
@@ -810,7 +972,6 @@
     pendingSettings = null;
     document.getElementById('settings-modal').classList.remove('show');
     document.body.classList.remove('modal-open');
-    // Revert any live previews applied by the gap/float/animate sliders
     applySettings();
   }
 
@@ -894,15 +1055,15 @@
   }
 
   // ============ INIT ============
+  const TOOLBAR_H = 36; // keep in sync with --toolbar-h
+
   function calculateCellHeight() {
     return calculateCellHeightForRows(settings.rows, settings.gap);
   }
 
   function calculateCellHeightForRows(rows, gap) {
     const totalGap = gap * (rows + 1);
-    const available = window.innerHeight - totalGap;
-    // No Math.floor — fractional pixel heights eliminate the gap at the bottom
-    // that rounding-down accumulates across all rows.
+    const available = window.innerHeight - TOOLBAR_H - totalGap;
     return Math.max(8, available / rows);
   }
 
@@ -947,8 +1108,8 @@
     });
     grid.on('dragstop', (e, el) => {
       document.body.classList.remove('dragging');
-      autoFillPanel(el?.gridstackNode, el); // expand into empty space before restoring BVs
-      bvShow(); // syncs bounds (after fill) + restores visibility
+      autoFillPanel(el?.gridstackNode, el);
+      bvShow();
       saveLayout();
     });
 
@@ -969,16 +1130,6 @@
   }
 
   // ============ RESIZE EVENTS ============
-  // Simplified: GridStack handles its own collision/float logic.
-  // We only need to hook resizestart/resizestop for pointer-events and
-  // the webview repaint fix.
-  //
-  // Root cause of the old "tiling resize" code: it tried to mirror adjacent
-  // panel resizes, but the logic was brittle — a single off-by-one in grid
-  // units would cause panels to jump or disappear.  Removed entirely.
-  // Users can resize panels independently; GridStack's built-in float mode
-  // lets them overlap or snap as needed without forced coupling.
-
   function setupResizeHandlers() {
     grid.on('resizestart', () => {
       document.body.classList.add('dragging');
@@ -986,20 +1137,12 @@
     });
     grid.on('resizestop', (e, el) => {
       document.body.classList.remove('dragging');
-      tileAdjacentPanels(el?.gridstackNode); // shrink overlapping neighbours
-      bvShow(); // syncs bounds + restores visibility
+      tileAdjacentPanels(el?.gridstackNode);
+      bvShow();
       saveLayout();
     });
   }
 
-  // Tiling resize: after a panel is manually resized, trim any neighbouring panels
-  // that now overlap it so the grid stays non-overlapping.
-  // For each overlapping panel the algorithm finds the cheapest (smallest) trim:
-  //   • trim the right side  → keep left portion, stop at N's left edge
-  //   • trim the left side   → keep right portion, start at N's right edge
-  //   • trim the bottom side → keep top portion, stop at N's top edge
-  //   • trim the top side    → keep bottom portion, start at N's bottom edge
-  // The option with the smallest row/col adjustment is applied.
   function tileAdjacentPanels(node) {
     if (!node || !grid) return;
     let changed = false;
@@ -1009,36 +1152,31 @@
     for (const o of others) {
       const xOverlap = node.x < o.x + o.w && node.x + node.w > o.x;
       const yOverlap = node.y < o.y + o.h && node.y + node.h > o.y;
-      if (!xOverlap || !yOverlap) continue; // no overlap
+      if (!xOverlap || !yOverlap) continue;
 
       const options = [];
 
-      // Trim O's right side so it stops at node's left edge
       if (node.x > o.x) {
         const newW = node.x - o.x;
         if (newW >= 1) options.push({ cost: o.w - newW, update: { w: newW } });
       }
-      // Trim O's left side so it starts at node's right edge
       if (node.x + node.w < o.x + o.w) {
         const newX = node.x + node.w;
         const newW = (o.x + o.w) - newX;
         if (newW >= 1) options.push({ cost: o.w - newW, update: { x: newX, w: newW } });
       }
-      // Trim O's bottom side so it stops at node's top edge
       if (node.y > o.y) {
         const newH = node.y - o.y;
         if (newH >= 1) options.push({ cost: o.h - newH, update: { h: newH } });
       }
-      // Trim O's top side so it starts at node's bottom edge
       if (node.y + node.h < o.y + o.h) {
         const newY = node.y + node.h;
         const newH = (o.y + o.h) - newY;
         if (newH >= 1) options.push({ cost: o.h - newH, update: { y: newY, h: newH } });
       }
 
-      if (options.length === 0) continue; // surrounded — skip
+      if (options.length === 0) continue;
 
-      // Apply the trim that removes the least from the neighbour
       options.sort((a, b) => a.cost - b.cost);
       grid.update(o.el, options[0].update);
       changed = true;
@@ -1050,11 +1188,6 @@
     }
   }
 
-  // ── Double-click resize handle → snap panel to nearest window edge ────────
-  // Double-click any resize handle → snap to the nearest adjacent panel edge
-  // (or the window edge if no panel is in that direction).
-  // Works for all 8 handle directions. Corner handles (SE, SW, etc.) snap
-  // in both of their axes simultaneously.
   function setupEdgeDoubleClick() {
     document.getElementById('grid').addEventListener('dblclick', e => {
       const handle = e.target.closest('.ui-resizable-handle');
@@ -1083,13 +1216,10 @@
       const maxRows = settings.rows;
       const others  = grid.engine.nodes.filter(n => n.id !== node.id);
 
-      // Helper: find nearest panel edge in a direction, only considering panels
-      // that overlap in the perpendicular axis (so we only snap to panels the
-      // expanding edge would actually collide with).
       const nearestRight = () => {
         const hit = others.filter(n =>
-          n.x >= node.x + node.w &&          // panel is to the right
-          n.y < node.y + node.h && n.y + n.h > node.y // overlaps vertically
+          n.x >= node.x + node.w &&
+          n.y < node.y + node.h && n.y + n.h > node.y
         ).sort((a, b) => a.x - b.x)[0];
         return hit ? hit.x - node.x : cols - node.x;
       };
@@ -1129,9 +1259,6 @@
     });
   }
 
-  // Auto-fill: when a panel is dropped into a region with open space, expand
-  // it to fill the available gap in both axes.  Only expands into truly empty
-  // cells — stops at the first cell occupied by another panel.
   function autoFillPanel(node, el) {
     if (!node || !el) return;
     const cols    = grid.opts.column;
@@ -1141,7 +1268,6 @@
     const cellOccupied = (col, row) =>
       others.some(n => n.x <= col && col < n.x + n.w && n.y <= row && row < n.y + n.h);
 
-    // Expand right
     let newW = node.w;
     for (let col = node.x + node.w; col < cols; col++) {
       const blocked = Array.from({ length: node.h }, (_, i) => node.y + i)
@@ -1150,7 +1276,6 @@
       newW++;
     }
 
-    // Expand down (using the new width so we fill the full rectangle)
     let newH = node.h;
     for (let row = node.y + node.h; row < maxRows; row++) {
       const blocked = Array.from({ length: newW }, (_, i) => node.x + i)
@@ -1165,18 +1290,7 @@
   }
 
   // ── BrowserView panel management ─────────────────────────────────────────────
-  // "webview" type panels are backed by BrowserViews in the main process rather
-  // than <webview> DOM elements.  BrowserViews are OS-level overlays positioned
-  // to exactly match the panel-body's bounding rect — this is the definitive fix
-  // for the viewport-cropping bug that no DOM/CSS approach could solve.
-  //
-  // Visibility rules:
-  //   BVs are hidden (removed from window) while any modal is open or while
-  //   a drag/resize is in progress.  This prevents the OS overlay from sitting
-  //   on top of modal dialogs and from swallowing mouse events during drag.
-  //   They are restored with fresh bounds immediately after.
-
-  let _bvHideCount = 0; // reference count: >0 means hidden
+  let _bvHideCount = 0;
 
   function bvHide() {
     if (_bvHideCount++ === 0) window.electronAPI?.bvSetVisible(false);
@@ -1184,7 +1298,7 @@
   function bvShow() {
     _bvHideCount = Math.max(0, _bvHideCount - 1);
     if (_bvHideCount === 0) {
-      syncAllBVBounds(); // push updated positions before making visible
+      syncAllBVBounds();
       window.electronAPI?.bvSetVisible(true);
     }
   }
@@ -1198,7 +1312,6 @@
              w: Math.round(r.width), h: Math.round(r.height) };
   }
 
-  // Returns true for any panel type that is backed by a BrowserView.
   function isBVPanel(cfg) { return cfg.type === 'webview' || cfg.type === 'stream'; }
 
   function syncAllBVBounds() {
@@ -1220,17 +1333,15 @@
       const bounds = getBVBounds(id);
       if (bounds) {
         window.electronAPI?.bvCreate({ id, url: cfg.url, bounds });
-        // Extra sync on the next frame to catch any layout settle
         requestAnimationFrame(syncAllBVBounds);
       } else if (++attempts < 20) {
         requestAnimationFrame(tryCreate);
       } else {
-        // Fallback: derive height from GridStack item style
         const item = document.querySelector(`#content-${id}`)?.closest('.grid-stack-item');
         const body = document.querySelector(`#content-${id} .panel-body`);
         if (body && item) {
           const r = body.getBoundingClientRect();
-          const h = Math.max(1, parseFloat(item.style.height || '0') - 24 - 2);
+          const h = Math.max(1, parseFloat(item.style.height || '0') - 28 - 2);
           window.electronAPI?.bvCreate({
             id, url: cfg.url,
             bounds: { x: Math.round(r.left), y: Math.round(r.top),
@@ -1246,8 +1357,6 @@
     window.electronAPI?.bvDestroy({ id });
   }
 
-  // Modal observer: hide BVs whenever any modal is open so they don't
-  // sit on top of the overlay.  Tracks the modal-open body class.
   let _modalWasOpen = false;
   new MutationObserver(() => {
     const open = document.body.classList.contains('modal-open');
@@ -1255,7 +1364,6 @@
     if (!open && _modalWasOpen)  { _modalWasOpen = false; bvShow(); }
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
-  // Scroll sync: keep BV positions correct if the grid-wrapper scrolls
   document.getElementById('grid-wrapper').addEventListener('scroll', () => {
     if (_bvHideCount === 0) syncAllBVBounds();
   });
@@ -1264,9 +1372,6 @@
   function buildPanelHTML(id, config) {
     const { title, url, type } = config;
 
-    // BrowserView panel — no DOM content; a BrowserView is positioned over
-    // this panel-body by the main process via IPC (createBVPanel / bvCreate).
-    // config.stream panels also use this path and get an extra mute toggle button.
     if (type === 'webview' || type === 'stream') {
       let muteBtn = '';
       if (config.stream) {
@@ -1276,8 +1381,8 @@
       }
       return `
         <div class="panel-header">
+          <div class="type-stripe"></div>
           <div class="title-group">
-            <span class="dot"></span>
             <span class="title-text">${escapeHtml(title)}</span>
           </div>
           <div class="actions">
@@ -1293,8 +1398,8 @@
 
     return `
       <div class="panel-header">
+        <div class="type-stripe"></div>
         <div class="title-group">
-          <span class="dot"></span>
           <span class="title-text">${escapeHtml(title)}</span>
         </div>
         <div class="actions">
@@ -1320,12 +1425,14 @@
     const x = gridOpts.x;
     const y = gridOpts.y;
 
+    const typeClass = `panel-type-${config.preset || 'custom'}`;
+
     const widget = {
       id,
       w, h,
       ...(x !== undefined ? { x } : {}),
       ...(y !== undefined ? { y } : {}),
-      content: `<div class="grid-stack-item-content" id="content-${id}">${buildPanelHTML(id, config)}</div>`
+      content: `<div class="grid-stack-item-content ${typeClass}" id="content-${id}">${buildPanelHTML(id, config)}</div>`
     };
 
     grid.addWidget(widget);
@@ -1404,8 +1511,6 @@
     return { panels: nodes, columns: settings.columns, rows: settings.rows, gap: settings.gap, savedAt: Date.now() };
   }
   function saveCurrentAsLayout() {
-    // Open modal instead of prompt() — prompt() silently fails when called
-    // via executeJavaScript() from the native menu in Electron 29.
     document.getElementById('save-layout-name').value = '';
     document.getElementById('save-layout-modal').classList.add('show');
     document.body.classList.add('modal-open');
@@ -1459,6 +1564,7 @@
     setSavedLayouts(layouts);
     notifyMenuUpdate();
   }
+
   // ============ PANEL ACTIONS ============
   function reloadPanel(id) {
     if (isBVPanel(panels[id])) {
@@ -1474,7 +1580,7 @@
     const cfg = panels[id];
     if (!cfg || !cfg.stream) return;
     const url = new URL(cfg.url);
-    const wasMuted = url.searchParams.get('muted') !== 'false'; // default true
+    const wasMuted = url.searchParams.get('muted') !== 'false';
     url.searchParams.set('muted', wasMuted ? 'false' : 'true');
     cfg.url = url.toString();
     window.electronAPI?.bvNavigate({ id, url: cfg.url });
@@ -1501,11 +1607,13 @@
     document.getElementById('edit-url-modal').classList.remove('show');
     document.body.classList.remove('modal-open');
   }
-  function confirmEditUrl() {
+  async function confirmEditUrl() {
     const raw = document.getElementById('edit-url-input').value.trim();
     if (!raw) return;
-    // Basic URL validation
-    try { new URL(raw); } catch { alert('Please enter a valid URL starting with https://'); return; }
+    try { new URL(raw); } catch {
+      await showConfirm('Invalid URL', 'Please enter a valid URL starting with https://', 'OK');
+      return;
+    }
     closeEditUrlModal();
     const id = _editingPanelId;
     if (!id || !panels[id]) return;
@@ -1529,10 +1637,14 @@
   function toggleLock() {
     isLocked = !isLocked;
     document.body.classList.toggle('locked', isLocked);
-    // Update all panels' move/resize constraints
     grid.engine.nodes.forEach(node => {
       grid.update(node.el, { noMove: isLocked, noResize: isLocked, locked: isLocked });
     });
+    const btn = document.getElementById('tb-lock');
+    if (btn) {
+      btn.textContent = isLocked ? '⊗ Locked' : '⊘ Lock Layout';
+      btn.classList.toggle('active', isLocked);
+    }
   }
 
   async function resetLayout() {
@@ -1577,9 +1689,6 @@
       try {
         const nodes = JSON.parse(saved);
         if (nodes.length > 0) {
-          // Clamp panels that exceed the current column count rather than
-          // discarding the whole layout (previous behaviour wiped everything
-          // if even a single panel was slightly out of bounds).
           const usable = nodes.filter(n => n.config && n.w > 0 && n.h > 0).map(n => {
             const node = { ...n };
             if (node.x < 0) node.x = 0;
@@ -1588,8 +1697,6 @@
               node.w = settings.columns - node.x;
               if (node.w < 1) { node.x = 0; node.w = Math.min(settings.columns, 4); }
             }
-            // Always refresh URL + type from current PRESETS so stale saved
-            // values (e.g. old iframe for activity-feed) are never re-used.
             if (node.config.preset && PRESETS[node.config.preset]) {
               const fresh = PRESETS[node.config.preset];
               node.config.url    = fresh.url;
@@ -1622,8 +1729,6 @@
   }
 
   // ============ CONFIRM MODAL ============
-  // Replaces window.confirm() throughout — confirm() silently returns false
-  // when called via executeJavaScript() from the native menu in Electron 29.
   let _confirmResolve = null;
   function showConfirm(title, message, okLabel = 'OK') {
     return new Promise(resolve => {
@@ -1664,12 +1769,12 @@
       case 'available':
         title.textContent = 'Update Available';
         body.innerHTML = `<span>Version <strong style="color:var(--accent)">${payload.version}</strong> is available.</span>
-          <span style="color:var(--text-dim);font-size:10px;">The update will download automatically in the background.</span>`;
+          <span style="color:var(--text-dim);font-size:11px;">The update will download automatically in the background.</span>`;
         break;
       case 'not-available':
         title.textContent = 'Up to Date';
         body.innerHTML = `<span>You're running the latest version.</span>
-          <span style="color:var(--text-dim);font-size:10px;">(${payload.version})</span>`;
+          <span style="color:var(--text-dim);font-size:11px;">(${payload.version})</span>`;
         footer.innerHTML = `
           <button onclick="window.electronAPI?.checkForUpdates()">Check Again</button>
           <button class="primary" onclick="closeUpdateModal()">Close</button>`;
@@ -1687,15 +1792,15 @@
       case 'ready':
         title.textContent = 'Ready to Install';
         body.innerHTML = `<span>Version <strong style="color:var(--accent)">${payload.version}</strong> has been downloaded.</span>
-          <span style="color:var(--text-dim);font-size:10px;">The app will restart to apply the update.</span>`;
+          <span style="color:var(--text-dim);font-size:11px;">The app will restart to apply the update.</span>`;
         footer.innerHTML = `
           <button onclick="closeUpdateModal()">Later</button>
           <button class="primary" onclick="window.electronAPI.installUpdate()">Restart &amp; Install</button>`;
         break;
       case 'error':
         title.textContent = 'Update Error';
-        body.innerHTML = `<span style="color:#ff6b6b">Update check failed.</span>
-          <span style="color:var(--text-dim);font-size:10px;word-break:break-all;">${payload.message || 'Unknown error'}</span>`;
+        body.innerHTML = `<span style="color:var(--danger)">Update check failed.</span>
+          <span style="color:var(--text-dim);font-size:11px;word-break:break-all;">${payload.message || 'Unknown error'}</span>`;
         footer.innerHTML = `
           <button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>
           <button class="primary" onclick="closeUpdateModal()">Close</button>`;
@@ -1704,8 +1809,6 @@
   }
 
   // ============ NATIVE MENU SYNC ============
-  // Sends current layouts + closed-panels state to main process so it can
-  // rebuild the native Layouts and "Reopen Closed Panel" menus dynamically.
   function notifyMenuUpdate() {
     if (!window.electronAPI) return;
     const layouts = getSavedLayouts().map((l, i) => ({ name: l.name, index: i }));
@@ -1733,7 +1836,6 @@
   applySettings();
   notifyMenuUpdate();
 
-  // Wire update events from main process → update modal
   if (window.electronAPI) {
     window.electronAPI.onUpdateStatus(showUpdateStatus);
   }
