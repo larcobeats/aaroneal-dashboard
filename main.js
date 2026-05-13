@@ -106,7 +106,9 @@ function setupHeaderStripping(ses) {
 // External links (chat URLs, etc.) go to the default browser.
 
 const TRUSTED_AUTH_DOMAINS = [
-  'twitch.tv', 'id.twitch.tv', 'passport.twitch.tv',
+  // Only specific auth subdomains — bare 'twitch.tv' is intentionally excluded
+  // so that clicking channel/user links in chat opens the system browser.
+  'id.twitch.tv', 'passport.twitch.tv',
   'streamelements.com',
   'tikfinity.zerody.one',
 ];
@@ -389,6 +391,7 @@ async function createWindow() {
     minHeight: 600,
     backgroundColor: '#0e0e10',
     title: 'Aaroneal Dashboard',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
