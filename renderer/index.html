@@ -1938,6 +1938,10 @@
 
   if (window.electronAPI) {
     window.electronAPI.onUpdateStatus(showUpdateStatus);
+    // Sync any update state that arrived before this listener registered
+    window.electronAPI.getUpdateStatus().then(payload => {
+      if (payload) showUpdateStatus(payload);
+    }).catch(() => {});
   }
 </script>
 

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Payload: { state: 'checking'|'available'|'not-available'|'downloading'|'ready'|'error',
   //            version?, percent?, message? }
   onUpdateStatus:   (cb) => ipcRenderer.on('update-status', (_e, payload) => cb(payload)),
+  getUpdateStatus:  ()   => ipcRenderer.invoke('get-update-status'),
   installUpdate:    ()   => ipcRenderer.send('install-update'),
   checkForUpdates:  ()   => ipcRenderer.send('check-for-updates'),
 

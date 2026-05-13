@@ -366,22 +366,28 @@ function sendUpdateStatus(payload) {
   mainWin?.webContents.send('update-status', payload);
 }
 
+let _checkInProgress = false;
+
 function triggerUpdateCheck() {
+  if (_checkInProgress) return;
+  _checkInProgress = true;
+  autoUpdater.autoDownload = true;
   autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
   sendUpdateStatus({ state: 'checking' });
-  autoUpdater.checkForUpdates().catch(err =>
-    sendUpdateStatus({ state: 'error', message: err.message })
-  );
+  autoUpdater.checkForUpdates()
+    .catch(err => sendUpdateStatus({ state: 'error', message: err.message }))
+    .finally(() => { _checkInProgress = false; });
 }
 
 ipcMain.on('check-for-updates', () => triggerUpdateCheck());
+ipcMain.handle('get-update-status', () => _lastUpdatePayload);
 
-autoUpdater.on('checking-for-update',  ()     => sendUpdateStatus({ state: 'checking' }));
-autoUpdater.on('update-available',     info   => sendUpdateStatus({ state: 'available',     version: info.version }));
-autoUpdater.on('update-not-available', info   => sendUpdateStatus({ state: 'not-available', version: info.version }));
-autoUpdater.on('download-progress',    prog   => sendUpdateStatus({ state: 'downloading',   percent: Math.round(prog.percent) }));
-autoUpdater.on('update-downloaded',    info   => sendUpdateStatus({ state: 'ready',         version: info.version }));
-autoUpdater.on('error',                err    => sendUpdateStatus({ state: 'error',         message: err.message }));
+autoUpdater.on('checking-for-update',  ()     => { _checkInProgress = true;  sendUpdateStatus({ state: 'checking' }); });
+autoUpdater.on('update-available',     info   => { _checkInProgress = false; sendUpdateStatus({ state: 'available',     version: info.version }); });
+autoUpdater.on('update-not-available', info   => { _checkInProgress = false; sendUpdateStatus({ state: 'not-available', version: info.version }); });
+autoUpdater.on('download-progress',    prog   =>   sendUpdateStatus({ state: 'downloading',   percent: Math.round(prog.percent) }));
+autoUpdater.on('update-downloaded',    info   => { _checkInProgress = false; sendUpdateStatus({ state: 'ready',         version: info.version }); });
+autoUpdater.on('error',                err    => { _checkInProgress = false; sendUpdateStatus({ state: 'error',         message: err.message }); });
 
 ipcMain.on('install-update', () => autoUpdater.quitAndInstall());
 
@@ -425,7 +431,12 @@ async function createWindow() {
   buildMenu();
   applyWindowOpenHandler(mainWin.webContents);
   mainWin.loadURL(`http://localhost:${PORT}`);
-  autoUpdater.checkForUpdates().catch(() => {});
+
+  // Delay the startup check until the renderer has loaded so update-status
+  // events aren't silently dropped before onUpdateStatus is registered.
+  mainWin.webContents.once('did-finish-load', () => {
+    setTimeout(triggerUpdateCheck, 2000);
+  });
 }
 
 // Apply popup policy + header stripping to every webContents
