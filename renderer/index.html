@@ -196,12 +196,12 @@
     background: rgba(255, 107, 107, 0.1);
   }
 
-  /* panel-body is a flex item (fills remaining height after header) and also
-     a positioning context so the webview can anchor to it absolutely.
-     iframes stay in the flex flow; webviews use position:absolute so Electron
-     can resolve a concrete pixel height for the internal renderer process —
-     flex:1 alone does not reliably propagate a pixel dimension to the webview
-     guest renderer, causing the viewport to appear as only the top slice. */
+  /* panel-body fills the remaining height below the panel header.
+     For iframe panels: the iframe lives inside and flexes to fill.
+     For BrowserView panels: the body is empty — a BrowserView in the main
+     process is positioned over it via getBoundingClientRect() bounds sent
+     over IPC.  The body itself just needs correct dimensions so the bounds
+     are accurate. */
   .panel-body {
     flex: 1 1 0;
     min-height: 0;
@@ -221,23 +221,8 @@
     display: block;
   }
 
-  /* webview: absolutely positioned so the JS ResizeObserver can stamp an
-     explicit pixel height. height is intentionally NOT set here — it is
-     written exclusively via inline style by attachWebviewObserver() so
-     Electron's guest renderer receives an unambiguous pixel value. */
-  .panel-body webview {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    /* height set by JS — do not add height here */
-    border: 0;
-    display: block;
-  }
-
   /* ===== GRIDSTACK BEHAVIOR ===== */
-  body.dragging iframe,
-  body.dragging webview { pointer-events: none !important; }
+  body.dragging iframe { pointer-events: none !important; }
   body.dragging * { user-select: none !important; }
   /* Prevent auto-scroll when dragging/resizing panels toward the window edge.
      Manual scroll wheel still works once drag ends (overflow-y: auto restores). */
@@ -755,6 +740,7 @@
     document.body.classList.remove('modal-open');
 
     if (needsReload) {
+      window.electronAPI?.bvDestroyAll();
       location.reload();
     } else {
       applySettings();
@@ -808,6 +794,7 @@
     if (!ok) return;
     settings = { ...DEFAULT_SETTINGS };
     saveSettings();
+    window.electronAPI?.bvDestroyAll();
     location.reload();
   }
 
@@ -892,25 +879,28 @@
 
     grid.on('dragstart', () => {
       document.body.classList.add('dragging');
-      grid.opts.maxRow = settings.rows; // clamp: panel can't be dragged below viewport
+      grid.opts.maxRow = settings.rows;
+      bvHide();
     });
     grid.on('dragstop', () => {
       document.body.classList.remove('dragging');
       grid.opts.maxRow = 0;
+      bvShow(); // syncs bounds + restores visibility
       saveLayout();
     });
 
     setupResizeHandlers();
     setupEdgeDoubleClick();
 
-    grid.on('change',          saveLayout);
-    grid.on('added removed',   saveLayout);
+    grid.on('change',        () => { saveLayout(); syncAllBVBounds(); });
+    grid.on('added removed', () => { saveLayout(); syncAllBVBounds(); });
 
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         if (grid) grid.cellHeight(calculateCellHeight());
+        syncAllBVBounds();
       }, 150);
     });
   }
@@ -929,11 +919,13 @@
   function setupResizeHandlers() {
     grid.on('resizestart', () => {
       document.body.classList.add('dragging');
-      grid.opts.maxRow = settings.rows; // clamp: panel can't be resized below viewport
+      grid.opts.maxRow = settings.rows;
+      bvHide();
     });
     grid.on('resizestop', () => {
       document.body.classList.remove('dragging');
       grid.opts.maxRow = 0;
+      bvShow(); // syncs bounds + restores visibility
       saveLayout();
     });
   }
@@ -982,89 +974,105 @@
     });
   }
 
-  // ── Webview viewport fix ──────────────────────────────────────────────────
-  // Electron's <webview> has a documented bug where the internal Chromium guest
-  // renderer can be created with the wrong viewport size regardless of CSS height.
-  // The fix uses two Electron-specific APIs working together:
+  // ── BrowserView panel management ─────────────────────────────────────────────
+  // "webview" type panels are backed by BrowserViews in the main process rather
+  // than <webview> DOM elements.  BrowserViews are OS-level overlays positioned
+  // to exactly match the panel-body's bounding rect — this is the definitive fix
+  // for the viewport-cropping bug that no DOM/CSS approach could solve.
   //
-  //   disableguestresize (HTML attribute) — tells Electron NOT to auto-resize the
-  //     guest viewport when the element's CSS size changes. Without this, Electron
-  //     competes with our manual calls and can clobber them with stale 0px values.
-  //
-  //   webview.setSize({ normal: { width, height } }) — explicitly sets the
-  //     Chromium guest renderer's viewport to exact pixel dimensions, bypassing
-  //     whatever clientHeight Electron may have read from the DOM.
-  //
-  // Combined: we own the viewport size completely, so it's always correct.
+  // Visibility rules:
+  //   BVs are hidden (removed from window) while any modal is open or while
+  //   a drag/resize is in progress.  This prevents the OS overlay from sitting
+  //   on top of modal dialogs and from swallowing mouse events during drag.
+  //   They are restored with fresh bounds immediately after.
 
-  const _webviewObservers = new Map(); // panelId → ResizeObserver
+  let _bvHideCount = 0; // reference count: >0 means hidden
 
-  function attachWebviewObserver(id) {
-    const content = document.getElementById(`content-${id}`);
-    if (!content) return;
-    const body = content.querySelector('.panel-body');
-    const wv   = content.querySelector('webview');
-    if (!body || !wv) return;
+  function bvHide() {
+    if (_bvHideCount++ === 0) window.electronAPI?.bvSetVisible(false);
+  }
+  function bvShow() {
+    _bvHideCount = Math.max(0, _bvHideCount - 1);
+    if (_bvHideCount === 0) {
+      syncAllBVBounds(); // push updated positions before making visible
+      window.electronAPI?.bvSetVisible(true);
+    }
+  }
 
-    // Set both the CSS size (visual) and the Chromium guest viewport (logical).
-    // Called at init, after every load, and on every ResizeObserver tick.
-    const applySize = () => {
-      let h = body.getBoundingClientRect().height;
-      if (h <= 0) {
-        // Pre-paint fallback: GridStack stamps style.height on the item synchronously.
-        const gsItem = body.closest('.grid-stack-item');
-        const itemH  = gsItem ? (parseFloat(gsItem.style.height) || 0) : 0;
-        if (itemH > 0) h = itemH - 24 - 2; // header 24px + border 2px
-      }
-      if (h <= 0) return 0;
-      const w = Math.round(body.getBoundingClientRect().width || body.offsetWidth || 400);
-      wv.style.height = h + 'px';
-      try { wv.setSize({ normal: { width: w, height: Math.round(h) } }); } catch {}
-      return h;
-    };
+  function getBVBounds(id) {
+    const body = document.querySelector(`#content-${id} .panel-body`);
+    if (!body) return null;
+    const r = body.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return null;
+    return { x: Math.round(r.left), y: Math.round(r.top),
+             w: Math.round(r.width), h: Math.round(r.height) };
+  }
 
-    // ResizeObserver keeps both dimensions correct on every GridStack / window resize.
-    const ro = new ResizeObserver(applySize);
-    ro.observe(body);
-    _webviewObservers.set(id, ro);
+  function syncAllBVBounds() {
+    if (!window.electronAPI) return;
+    const updates = [];
+    for (const [id, cfg] of Object.entries(panels)) {
+      if (cfg.type !== 'webview') continue;
+      const bounds = getBVBounds(id);
+      if (bounds) updates.push({ id, bounds });
+    }
+    if (updates.length) window.electronAPI.bvSetAllBounds(updates);
+  }
 
-    const activateSrc = () => {
-      if (wv.hasAttribute('src')) return;
-      const src = wv.getAttribute('data-src');
-      if (!src) return;
-      applySize();
-      void wv.offsetHeight; // synchronous layout flush before src triggers guest creation
-      wv.setAttribute('src', src);
-      // Re-apply after every page load (initial + reloads + navigations).
-      wv.addEventListener('dom-ready',       () => applySize());
-      wv.addEventListener('did-finish-load', () => applySize());
-    };
-
-    // rAF retry: GridStack may not have applied pixel dimensions at addWidget time.
+  function createBVPanel(id) {
+    const cfg = panels[id];
+    if (!cfg || cfg.type !== 'webview') return;
     let attempts = 0;
-    const tryInit = () => {
-      const h = applySize();
-      if (h > 0) {
-        activateSrc();
+    const tryCreate = () => {
+      const bounds = getBVBounds(id);
+      if (bounds) {
+        window.electronAPI?.bvCreate({ id, url: cfg.url, bounds });
+        // Extra sync on the next frame to catch any layout settle
+        requestAnimationFrame(syncAllBVBounds);
       } else if (++attempts < 20) {
-        requestAnimationFrame(tryInit);
+        requestAnimationFrame(tryCreate);
       } else {
-        activateSrc(); // fallback: load even if height detection failed
+        // Fallback: derive height from GridStack item style
+        const item = document.querySelector(`#content-${id}`)?.closest('.grid-stack-item');
+        const body = document.querySelector(`#content-${id} .panel-body`);
+        if (body && item) {
+          const r = body.getBoundingClientRect();
+          const h = Math.max(1, parseFloat(item.style.height || '0') - 24 - 2);
+          window.electronAPI?.bvCreate({
+            id, url: cfg.url,
+            bounds: { x: Math.round(r.left), y: Math.round(r.top),
+                      w: Math.max(1, Math.round(r.width)), h }
+          });
+        }
       }
     };
-    requestAnimationFrame(tryInit);
+    requestAnimationFrame(tryCreate);
   }
 
-  function detachWebviewObserver(id) {
-    const ro = _webviewObservers.get(id);
-    if (ro) { ro.disconnect(); _webviewObservers.delete(id); }
+  function destroyBVPanel(id) {
+    window.electronAPI?.bvDestroy({ id });
   }
+
+  // Modal observer: hide BVs whenever any modal is open so they don't
+  // sit on top of the overlay.  Tracks the modal-open body class.
+  let _modalWasOpen = false;
+  new MutationObserver(() => {
+    const open = document.body.classList.contains('modal-open');
+    if (open && !_modalWasOpen)  { _modalWasOpen = true;  bvHide(); }
+    if (!open && _modalWasOpen)  { _modalWasOpen = false; bvShow(); }
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+  // Scroll sync: keep BV positions correct if the grid-wrapper scrolls
+  document.getElementById('grid-wrapper').addEventListener('scroll', () => {
+    if (_bvHideCount === 0) syncAllBVBounds();
+  });
 
   // ============ PANEL HTML ============
   function buildPanelHTML(id, config) {
     const { title, url, type } = config;
 
-    // <webview> for chat — gives 7TV extension a top-level Chromium context to inject into
+    // BrowserView panel — no DOM content; a BrowserView is positioned over
+    // this panel-body by the main process via IPC (createBVPanel / bvCreate).
     if (type === 'webview') {
       return `
         <div class="panel-header">
@@ -1078,9 +1086,7 @@
             <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
           </div>
         </div>
-        <div class="panel-body">
-          <webview data-src="${escapeHtml(url)}" allowpopups partition="persist:main" disableguestresize></webview>
-        </div>
+        <div class="panel-body"></div>
       `;
     }
 
@@ -1143,7 +1149,7 @@
 
     grid.addWidget(widget);
     panels[id] = config;
-    if (config.type === 'webview') attachWebviewObserver(id);
+    if (config.type === 'webview') createBVPanel(id);
     saveLayout();
   }
 
@@ -1153,7 +1159,7 @@
     const node = grid.engine.nodes.find(n => n.id === id);
     if (!node) return;
 
-    detachWebviewObserver(id);
+    if (config.type === 'webview') destroyBVPanel(id);
     closedPanels.push({ ...config, w: node.w, h: node.h });
     grid.removeWidget(node.el, true);
     delete panels[id];
@@ -1255,6 +1261,7 @@
     localStorage.setItem('dashboard-settings', JSON.stringify(newSettings));
     localStorage.setItem('dashboard-layout', JSON.stringify(layout.panels));
     localStorage.setItem('dashboard-version', String(LAYOUT_VERSION));
+    window.electronAPI?.bvDestroyAll();
     location.reload();
   }
   async function deleteSavedLayout(idx, event) {
@@ -1270,10 +1277,13 @@
   }
   // ============ PANEL ACTIONS ============
   function reloadPanel(id) {
+    if (panels[id]?.type === 'webview') {
+      window.electronAPI?.bvReload({ id });
+      return;
+    }
     const content = document.getElementById(`content-${id}`);
     if (!content) return;
     content.querySelectorAll('iframe').forEach(f => { f.src = f.src; });
-    content.querySelectorAll('webview').forEach(wv => wv.reload());
   }
 
   function toggleStreamMute(id) {
@@ -1315,20 +1325,20 @@
     const id = _editingPanelId;
     if (!id || !panels[id]) return;
     panels[id].url = raw;
-    const content = document.getElementById(`content-${id}`);
-    if (content) {
-      content.querySelectorAll('iframe').forEach(f  => { f.src = raw; });
-      content.querySelectorAll('webview').forEach(wv => {
-        wv.setAttribute('data-src', raw); // keep data-src in sync
-        wv.src = raw;                     // navigate to new URL
-      });
+    if (panels[id].type === 'webview') {
+      window.electronAPI?.bvNavigate({ id, url: raw });
+    } else {
+      const content = document.getElementById(`content-${id}`);
+      if (content) content.querySelectorAll('iframe').forEach(f => { f.src = raw; });
     }
     saveLayout();
   }
 
   function reloadAll() {
+    Object.entries(panels).forEach(([id, cfg]) => {
+      if (cfg.type === 'webview') window.electronAPI?.bvReload({ id });
+    });
     document.querySelectorAll('.grid-stack iframe').forEach(f => { f.src = f.src; });
-    document.querySelectorAll('.grid-stack webview').forEach(wv => wv.reload());
   }
 
   function toggleLock() {
@@ -1349,6 +1359,7 @@
     localStorage.removeItem('dashboard-version');
     const newSettings = { ...settings, columns: DEFAULT_SETTINGS.columns, rows: DEFAULT_SETTINGS.rows };
     localStorage.setItem('dashboard-settings', JSON.stringify(newSettings));
+    window.electronAPI?.bvDestroyAll();
     location.reload();
   }
 

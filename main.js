@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, shell, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -48,8 +48,8 @@ const EXT_7TV_IDS = [
 ];
 
 function find7TVExtension() {
-  const local  = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-  const roaming = process.env.APPDATA    || path.join(os.homedir(), 'AppData', 'Roaming');
+  const local   = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  const roaming = process.env.APPDATA      || path.join(os.homedir(), 'AppData', 'Roaming');
 
   const browserBases = [
     path.join(local,  'Microsoft', 'Edge', 'User Data'),
@@ -86,7 +86,6 @@ function find7TVExtension() {
 // ─── Header stripping ─────────────────────────────────────────────────────────
 
 function setupHeaderStripping(ses) {
-  // Avoid double-registering on the same session object
   if (ses._headersStripped) return;
   ses._headersStripped = true;
 
@@ -131,7 +130,6 @@ function applyWindowOpenHandler(wc) {
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
-            // Share the same named session so auth cookies carry back to webviews
             partition: 'persist:main',
           },
         },
@@ -141,6 +139,92 @@ function applyWindowOpenHandler(wc) {
     return { action: 'deny' };
   });
 }
+
+// ─── BrowserView panel manager ───────────────────────────────────────────────
+// Each "webview" type panel (chat, activity feed) is backed by a BrowserView
+// rather than a <webview> DOM element.  BrowserViews are OS-level overlays
+// managed entirely from the main process, so Electron always creates the guest
+// renderer with exactly the right pixel dimensions — the root cause of the
+// persistent viewport-cropping bug that all DOM/CSS approaches could not fix.
+//
+// The renderer sends IPC to create/destroy/resize/navigate views.  Bounds are
+// kept in sync by the renderer after every GridStack layout change, window
+// resize, scroll event, and after drag/resize ends.
+//
+// BrowserViews are hidden (removed from window) during:
+//   • drag and resize operations — so the OS overlay doesn't swallow mouse events
+//   • any modal dialog — so modals aren't obscured by the OS-level overlay
+// They are restored with up-to-date bounds immediately after.
+
+const bvMap = new Map(); // panelId → { view: BrowserView, bounds: {x,y,w,h} }
+let _bvsVisible = true;  // false while any modal or drag/resize is active
+
+function normBounds(b) {
+  return {
+    x:      Math.round(b.x      ?? 0),
+    y:      Math.round(b.y      ?? 0),
+    width:  Math.max(1, Math.round(b.w ?? b.width  ?? 1)),
+    height: Math.max(1, Math.round(b.h ?? b.height ?? 1)),
+  };
+}
+
+function createBV(id, url, bounds) {
+  destroyBV(id); // idempotent — replace if already exists
+  const view = new BrowserView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      partition: 'persist:main', // shares session → 7TV extension + auth cookies
+      sandbox: false,            // required for Chrome extension injection
+    },
+  });
+  view.setBounds(normBounds(bounds));
+  if (_bvsVisible) mainWin?.addBrowserView(view);
+  view.webContents.loadURL(url);
+  bvMap.set(id, { view, bounds: { ...bounds } });
+}
+
+function destroyBV(id) {
+  const entry = bvMap.get(id);
+  if (!entry) return;
+  try { mainWin?.removeBrowserView(entry.view); } catch {}
+  try { entry.view.webContents.close();         } catch {}
+  bvMap.delete(id);
+}
+
+function setBVBounds(id, bounds) {
+  const entry = bvMap.get(id);
+  if (!entry) return;
+  entry.bounds = { ...bounds };  // persist latest bounds even while hidden
+  if (!_bvsVisible) return;     // will be applied when views are restored
+  entry.view.setBounds(normBounds(bounds));
+}
+
+function hideAllBVs() {
+  _bvsVisible = false;
+  for (const { view } of bvMap.values()) {
+    try { mainWin?.removeBrowserView(view); } catch {}
+  }
+}
+
+function showAllBVs() {
+  _bvsVisible = true;
+  for (const { view, bounds } of bvMap.values()) {
+    try {
+      mainWin?.addBrowserView(view);
+      view.setBounds(normBounds(bounds)); // apply any updates that arrived while hidden
+    } catch {}
+  }
+}
+
+ipcMain.on('bv-create',         (_e, { id, url, bounds }) => createBV(id, url, bounds));
+ipcMain.on('bv-destroy',        (_e, { id }) => destroyBV(id));
+ipcMain.on('bv-destroy-all',    ()  => { for (const id of [...bvMap.keys()]) destroyBV(id); });
+ipcMain.on('bv-navigate',       (_e, { id, url }) => { const e = bvMap.get(id); if (e) e.view.webContents.loadURL(url); });
+ipcMain.on('bv-reload',         (_e, { id }) => { const e = bvMap.get(id); if (e) e.view.webContents.reload(); });
+ipcMain.on('bv-set-bounds',     (_e, { id, bounds }) => setBVBounds(id, bounds));
+ipcMain.on('bv-set-all-bounds', (_e, updates) => updates.forEach(({ id, bounds }) => setBVBounds(id, bounds)));
+ipcMain.on('bv-set-visible',    (_e, visible) => visible ? showAllBVs() : hideAllBVs());
 
 // ─── Native menu ─────────────────────────────────────────────────────────────
 
@@ -152,7 +236,6 @@ function buildMenu() {
   const win = mainWin;
   const js = (code) => () => win.webContents.executeJavaScript(code).catch(() => {});
 
-  // Dynamic layouts submenu
   const layoutsSubmenu = [
     { label: 'Save Current Layout…', click: js('saveCurrentAsLayout()') },
     { type: 'separator' },
@@ -175,7 +258,6 @@ function buildMenu() {
   layoutsSubmenu.push({ type: 'separator' });
   layoutsSubmenu.push({ label: 'Reset to Default Layout', click: js('resetLayout()') });
 
-  // Dynamic reopen-closed-panel submenu
   const closedSubmenu = menuData.closedPanels.length === 0
     ? [{ label: 'No closed panels', enabled: false }]
     : menuData.closedPanels.map(p => ({
@@ -234,14 +316,10 @@ function buildMenu() {
         { type: 'separator' },
         { label: `Version ${app.getVersion()}`, enabled: false },
         { label: 'Check for Updates', click: () => {
-            // If an update is already downloaded and waiting to install, re-surface
-            // that state immediately rather than starting a redundant check.
             if (_lastUpdatePayload?.state === 'ready') {
               sendUpdateStatus(_lastUpdatePayload);
               return;
             }
-            // Force a fresh network request — prevents stale cached "no update" results
-            // from the silent startup check masking a newly published release.
             autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
             sendUpdateStatus({ state: 'checking' });
             autoUpdater.checkForUpdates().catch(err =>
@@ -255,17 +333,12 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// Renderer sends this whenever layouts or closed panels change
 ipcMain.on('menu-data', (_e, data) => {
   menuData = data;
   buildMenu();
 });
 
 // ─── Auto-updater → renderer UI ───────────────────────────────────────────────
-// All update lifecycle events are forwarded to the renderer as a single
-// 'update-status' channel so the renderer can drive its own modal UI.
-// Root cause of the broken "Check for Updates" button: these listeners were
-// completely absent — events fired into /dev/null and nothing reached the UI.
 
 let _lastUpdatePayload = null;
 
@@ -314,10 +387,7 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true,
       sandbox: false,
-      // Use persist:main so iframes in the main window share auth cookies
-      // with the chat webview — StreamElements login carries across both
       partition: 'persist:main',
     },
   });
@@ -325,19 +395,15 @@ async function createWindow() {
   buildMenu();
   applyWindowOpenHandler(mainWin.webContents);
   mainWin.loadURL(`http://localhost:${PORT}`);
-  // Silent background check on launch — events flow to renderer via sendUpdateStatus
-  autoUpdater.checkForUpdates().catch(() => { /* ignore startup check failures (dev mode, no internet) */ });
+  autoUpdater.checkForUpdates().catch(() => {});
 }
 
-// Apply popup policy + header stripping to every webContents (covers webviews & child windows)
+// Apply popup policy + header stripping to every webContents
+// (covers BrowserView guests, auth popup windows, etc.)
 app.on('web-contents-created', (_e, wc) => {
   setupHeaderStripping(wc.session);
   applyWindowOpenHandler(wc);
 
-  // Intercept same-tab navigation inside embedded webviews.
-  // Auth domains (Twitch, StreamElements, etc.) are allowed to navigate freely
-  // so OAuth redirect chains work.  Everything else opens in the system browser
-  // so clicking a URL posted in chat doesn't replace the panel.
   wc.on('will-navigate', (event, url) => {
     if (wc === mainWin?.webContents) return; // main window: always allow
     if (url.startsWith('http://localhost:'))  return; // local dev server: allow
@@ -352,6 +418,8 @@ app.on('web-contents-created', (_e, wc) => {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
+  // Destroy all BrowserViews before quitting
+  for (const id of [...bvMap.keys()]) destroyBV(id);
   if (localServer) localServer.close();
   app.quit();
 });
