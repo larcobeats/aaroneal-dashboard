@@ -4,8 +4,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Auto-updater ────────────────────────────────────────────────────────────
   // Payload: { state: 'checking'|'available'|'not-available'|'downloading'|'ready'|'error',
   //            version?, percent?, message? }
-  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, payload) => cb(payload)),
-  installUpdate:  ()   => ipcRenderer.send('install-update'),
+  onUpdateStatus:   (cb) => ipcRenderer.on('update-status', (_e, payload) => cb(payload)),
+  installUpdate:    ()   => ipcRenderer.send('install-update'),
+  checkForUpdates:  ()   => ipcRenderer.send('check-for-updates'),
 
   // ── Native menu sync ────────────────────────────────────────────────────────
   updateMenu: (data) => ipcRenderer.send('menu-data', data),

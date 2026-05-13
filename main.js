@@ -320,11 +320,7 @@ function buildMenu() {
               sendUpdateStatus(_lastUpdatePayload);
               return;
             }
-            autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
-            sendUpdateStatus({ state: 'checking' });
-            autoUpdater.checkForUpdates().catch(err =>
-              sendUpdateStatus({ state: 'error', message: err.message })
-            );
+            triggerUpdateCheck();
           }},
       ],
     },
@@ -346,6 +342,16 @@ function sendUpdateStatus(payload) {
   _lastUpdatePayload = payload;
   mainWin?.webContents.send('update-status', payload);
 }
+
+function triggerUpdateCheck() {
+  autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
+  sendUpdateStatus({ state: 'checking' });
+  autoUpdater.checkForUpdates().catch(err =>
+    sendUpdateStatus({ state: 'error', message: err.message })
+  );
+}
+
+ipcMain.on('check-for-updates', () => triggerUpdateCheck());
 
 autoUpdater.on('checking-for-update',  ()     => sendUpdateStatus({ state: 'checking' }));
 autoUpdater.on('update-available',     info   => sendUpdateStatus({ state: 'available',     version: info.version }));

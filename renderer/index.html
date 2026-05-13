@@ -747,6 +747,8 @@
     pendingSettings = null;
     document.getElementById('settings-modal').classList.remove('show');
     document.body.classList.remove('modal-open');
+    // Revert any live previews applied by the gap/float/animate sliders
+    applySettings();
   }
 
   function bindSettingsControls() {
@@ -769,7 +771,7 @@
       document.documentElement.style.setProperty('--gap', v + 'px');
       if (grid) {
         grid.margin(v);
-        grid.cellHeight(calculateCellHeightForRows(pendingSettings.rows, v));
+        grid.cellHeight(calculateCellHeightForRows(settings.rows, v));
       }
     });
 
@@ -870,6 +872,7 @@
       margin: settings.gap,
       float: settings.float,
       animate: settings.animate,
+      maxRow: settings.rows,
       resizable: { handles: 'all' },
       draggable: { handle: '.panel-header' },
       disableOneColumnMode: true
@@ -877,12 +880,10 @@
 
     grid.on('dragstart', () => {
       document.body.classList.add('dragging');
-      grid.opts.maxRow = settings.rows;
       bvHide();
     });
     grid.on('dragstop', (e, el) => {
       document.body.classList.remove('dragging');
-      grid.opts.maxRow = 0;
       autoFillPanel(el?.gridstackNode, el); // expand into empty space before restoring BVs
       bvShow(); // syncs bounds (after fill) + restores visibility
       saveLayout();
@@ -918,15 +919,72 @@
   function setupResizeHandlers() {
     grid.on('resizestart', () => {
       document.body.classList.add('dragging');
-      grid.opts.maxRow = settings.rows;
       bvHide();
     });
-    grid.on('resizestop', () => {
+    grid.on('resizestop', (e, el) => {
       document.body.classList.remove('dragging');
-      grid.opts.maxRow = 0;
+      tileAdjacentPanels(el?.gridstackNode); // shrink overlapping neighbours
       bvShow(); // syncs bounds + restores visibility
       saveLayout();
     });
+  }
+
+  // Tiling resize: after a panel is manually resized, trim any neighbouring panels
+  // that now overlap it so the grid stays non-overlapping.
+  // For each overlapping panel the algorithm finds the cheapest (smallest) trim:
+  //   • trim the right side  → keep left portion, stop at N's left edge
+  //   • trim the left side   → keep right portion, start at N's right edge
+  //   • trim the bottom side → keep top portion, stop at N's top edge
+  //   • trim the top side    → keep bottom portion, start at N's bottom edge
+  // The option with the smallest row/col adjustment is applied.
+  function tileAdjacentPanels(node) {
+    if (!node || !grid) return;
+    let changed = false;
+
+    const others = grid.engine.nodes.filter(n => n.id !== node.id && !n.locked);
+
+    for (const o of others) {
+      const xOverlap = node.x < o.x + o.w && node.x + node.w > o.x;
+      const yOverlap = node.y < o.y + o.h && node.y + node.h > o.y;
+      if (!xOverlap || !yOverlap) continue; // no overlap
+
+      const options = [];
+
+      // Trim O's right side so it stops at node's left edge
+      if (node.x > o.x) {
+        const newW = node.x - o.x;
+        if (newW >= 1) options.push({ cost: o.w - newW, update: { w: newW } });
+      }
+      // Trim O's left side so it starts at node's right edge
+      if (node.x + node.w < o.x + o.w) {
+        const newX = node.x + node.w;
+        const newW = (o.x + o.w) - newX;
+        if (newW >= 1) options.push({ cost: o.w - newW, update: { x: newX, w: newW } });
+      }
+      // Trim O's bottom side so it stops at node's top edge
+      if (node.y > o.y) {
+        const newH = node.y - o.y;
+        if (newH >= 1) options.push({ cost: o.h - newH, update: { h: newH } });
+      }
+      // Trim O's top side so it starts at node's bottom edge
+      if (node.y + node.h < o.y + o.h) {
+        const newY = node.y + node.h;
+        const newH = (o.y + o.h) - newY;
+        if (newH >= 1) options.push({ cost: o.h - newH, update: { y: newY, h: newH } });
+      }
+
+      if (options.length === 0) continue; // surrounded — skip
+
+      // Apply the trim that removes the least from the neighbour
+      options.sort((a, b) => a.cost - b.cost);
+      grid.update(o.el, options[0].update);
+      changed = true;
+    }
+
+    if (changed) {
+      syncAllBVBounds();
+      saveLayout();
+    }
   }
 
   // ── Double-click resize handle → snap panel to nearest window edge ────────
@@ -1553,7 +1611,9 @@
         title.textContent = 'Up to Date';
         body.innerHTML = `<span>You're running the latest version.</span>
           <span style="color:var(--text-dim);font-size:10px;">(${payload.version})</span>`;
-        footer.innerHTML = `<button class="primary" onclick="closeUpdateModal()">Close</button>`;
+        footer.innerHTML = `
+          <button onclick="window.electronAPI?.checkForUpdates()">Check Again</button>
+          <button class="primary" onclick="closeUpdateModal()">Close</button>`;
         break;
       case 'downloading': {
         const pct = payload.percent || 0;
@@ -1577,7 +1637,9 @@
         title.textContent = 'Update Error';
         body.innerHTML = `<span style="color:#ff6b6b">Update check failed.</span>
           <span style="color:var(--text-dim);font-size:10px;word-break:break-all;">${payload.message || 'Unknown error'}</span>`;
-        footer.innerHTML = `<button class="primary" onclick="closeUpdateModal()">Close</button>`;
+        footer.innerHTML = `
+          <button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>
+          <button class="primary" onclick="closeUpdateModal()">Close</button>`;
         break;
     }
   }
