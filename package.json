@@ -1,6 +1,6 @@
 {
   "name": "aaroneal-dashboard",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Aaroneal Stream Dashboard",
   "main": "main.js",
   "scripts": {

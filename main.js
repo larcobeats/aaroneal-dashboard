@@ -120,9 +120,27 @@ function isTrustedAuthDomain(url) {
   } catch { return false; }
 }
 
+// Broader check used only by setWindowOpenHandler (window.open / target=_blank).
+// Includes Twitch popout paths so that raid confirmations, predictions, etc.
+// open as Electron popups with the shared auth session rather than in the
+// system browser (where they'd have no session and appear broken).
+// Regular twitch.tv navigations (username links) are handled by will-navigate
+// which uses the stricter isTrustedAuthDomain — so the chat BV never hijacks
+// its own page for a profile link.
+function isTrustedPopup(url) {
+  try {
+    const { hostname, pathname } = new URL(url);
+    if (TRUSTED_AUTH_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d))) return true;
+    // Twitch popout windows (raid, predictions, squad, etc.) need the auth session
+    if ((hostname === 'www.twitch.tv' || hostname === 'twitch.tv') &&
+        pathname.startsWith('/popout/')) return true;
+    return false;
+  } catch { return false; }
+}
+
 function applyWindowOpenHandler(wc) {
   wc.setWindowOpenHandler(({ url }) => {
-    if (isTrustedAuthDomain(url)) {
+    if (isTrustedPopup(url)) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {

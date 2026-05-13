@@ -618,7 +618,8 @@
       title: 'Live Preview',
       url: `https://player.twitch.tv/?channel=${CHANNEL}&parent=localhost&muted=true&autoplay=true`,
       w: 8, h: 6,
-      type: 'stream'
+      type: 'webview', // BrowserView — own renderer process, immune to main-window focus/blur
+      stream: true     // signals buildPanelHTML to include the mute toggle button
     },
     'tikfinity-chat': {
       title: 'TikTok Chat',
@@ -1135,11 +1136,14 @@
              w: Math.round(r.width), h: Math.round(r.height) };
   }
 
+  // Returns true for any panel type that is backed by a BrowserView.
+  function isBVPanel(cfg) { return cfg.type === 'webview' || cfg.type === 'stream'; }
+
   function syncAllBVBounds() {
     if (!window.electronAPI) return;
     const updates = [];
     for (const [id, cfg] of Object.entries(panels)) {
-      if (cfg.type !== 'webview') continue;
+      if (!isBVPanel(cfg)) continue;
       const bounds = getBVBounds(id);
       if (bounds) updates.push({ id, bounds });
     }
@@ -1148,7 +1152,7 @@
 
   function createBVPanel(id) {
     const cfg = panels[id];
-    if (!cfg || cfg.type !== 'webview') return;
+    if (!cfg || !isBVPanel(cfg)) return;
     let attempts = 0;
     const tryCreate = () => {
       const bounds = getBVBounds(id);
@@ -1200,7 +1204,14 @@
 
     // BrowserView panel — no DOM content; a BrowserView is positioned over
     // this panel-body by the main process via IPC (createBVPanel / bvCreate).
-    if (type === 'webview') {
+    // config.stream panels also use this path and get an extra mute toggle button.
+    if (type === 'webview' || type === 'stream') {
+      let muteBtn = '';
+      if (config.stream) {
+        let isMuted = true;
+        try { isMuted = new URL(config.url).searchParams.get('muted') !== 'false'; } catch {}
+        muteBtn = `<button onclick="toggleStreamMute('${id}')" title="Toggle mute"><span class="mute-icon">${isMuted ? '&#128263;' : '&#128266;'}</span></button>`;
+      }
       return `
         <div class="panel-header">
           <div class="title-group">
@@ -1208,32 +1219,13 @@
             <span class="title-text">${escapeHtml(title)}</span>
           </div>
           <div class="actions">
+            ${muteBtn}
             <button onclick="editPanelUrl('${id}')" title="Edit URL">&#9998;</button>
             <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
             <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
           </div>
         </div>
         <div class="panel-body"></div>
-      `;
-    }
-
-    if (type === 'stream') {
-      return `
-        <div class="panel-header">
-          <div class="title-group">
-            <span class="dot"></span>
-            <span class="title-text">${escapeHtml(title)}</span>
-          </div>
-          <div class="actions">
-            <button onclick="toggleStreamMute('${id}')" title="Toggle mute"><span class="mute-icon">&#128263;</span></button>
-            <button onclick="editPanelUrl('${id}')" title="Edit URL">&#9998;</button>
-            <button onclick="reloadPanel('${id}')" title="Reload">&#8635;</button>
-            <button class="close-btn" onclick="closePanel('${id}')" title="Close">&#10005;</button>
-          </div>
-        </div>
-        <div class="panel-body">
-          <iframe src="${escapeHtml(url)}" frameborder="0" scrolling="no" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
-        </div>
       `;
     }
 
@@ -1276,7 +1268,7 @@
 
     grid.addWidget(widget);
     panels[id] = config;
-    if (config.type === 'webview') createBVPanel(id);
+    if (isBVPanel(config)) createBVPanel(id);
     saveLayout();
   }
 
@@ -1286,7 +1278,7 @@
     const node = grid.engine.nodes.find(n => n.id === id);
     if (!node) return;
 
-    if (config.type === 'webview') destroyBVPanel(id);
+    if (isBVPanel(config)) destroyBVPanel(id);
     closedPanels.push({ ...config, w: node.w, h: node.h });
     grid.removeWidget(node.el, true);
     delete panels[id];
@@ -1404,7 +1396,7 @@
   }
   // ============ PANEL ACTIONS ============
   function reloadPanel(id) {
-    if (panels[id]?.type === 'webview') {
+    if (isBVPanel(panels[id])) {
       window.electronAPI?.bvReload({ id });
       return;
     }
@@ -1414,15 +1406,16 @@
   }
 
   function toggleStreamMute(id) {
-    const content = document.getElementById(`content-${id}`);
-    if (!content) return;
-    const iframe = content.querySelector('iframe');
-    const muteIcon = content.querySelector('.mute-icon');
-    const url = new URL(iframe.src);
-    const isMuted = url.searchParams.get('muted') === 'true';
-    url.searchParams.set('muted', !isMuted);
-    iframe.src = url.toString();
-    muteIcon.textContent = isMuted ? '&#128266;' : '&#128263;';
+    const cfg = panels[id];
+    if (!cfg || !cfg.stream) return;
+    const url = new URL(cfg.url);
+    const wasMuted = url.searchParams.get('muted') !== 'false'; // default true
+    url.searchParams.set('muted', wasMuted ? 'false' : 'true');
+    cfg.url = url.toString();
+    window.electronAPI?.bvNavigate({ id, url: cfg.url });
+    const icon = document.querySelector(`#content-${id} .mute-icon`);
+    if (icon) icon.innerHTML = wasMuted ? '&#128266;' : '&#128263;';
+    saveLayout();
   }
 
   let _editingPanelId = null;
@@ -1463,7 +1456,7 @@
 
   function reloadAll() {
     Object.entries(panels).forEach(([id, cfg]) => {
-      if (cfg.type === 'webview') window.electronAPI?.bvReload({ id });
+      if (isBVPanel(cfg)) window.electronAPI?.bvReload({ id });
     });
     document.querySelectorAll('.grid-stack iframe').forEach(f => { f.src = f.src; });
   }
@@ -1534,8 +1527,9 @@
             // values (e.g. old iframe for activity-feed) are never re-used.
             if (node.config.preset && PRESETS[node.config.preset]) {
               const fresh = PRESETS[node.config.preset];
-              node.config.url  = fresh.url;
-              node.config.type = fresh.type;
+              node.config.url    = fresh.url;
+              node.config.type   = fresh.type;
+              node.config.stream = fresh.stream || false;
             }
             return node;
           });
