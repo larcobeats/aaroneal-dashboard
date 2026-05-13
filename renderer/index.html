@@ -37,8 +37,7 @@
   .grid-wrapper {
     height: 100vh;
     width: 100vw;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     background: var(--bg);
     position: relative;
   }
@@ -224,9 +223,6 @@
   /* ===== GRIDSTACK BEHAVIOR ===== */
   body.dragging iframe { pointer-events: none !important; }
   body.dragging * { user-select: none !important; }
-  /* Prevent auto-scroll when dragging/resizing panels toward the window edge.
-     Manual scroll wheel still works once drag ends (overflow-y: auto restores). */
-  body.dragging .grid-wrapper { overflow-y: hidden !important; }
 
   .grid-stack-item.ui-draggable-dragging,
   .grid-stack-item.ui-resizable-resizing {
