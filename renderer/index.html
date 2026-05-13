@@ -24,7 +24,6 @@
     --accent-glow:  rgba(123, 140, 255, 0.3);
     --danger:       #ff5264;
     --danger-dim:   rgba(255, 82, 100, 0.12);
-    --toolbar-h:    36px;
     --header-h:     22px;
     --gap:          0px;
   }
@@ -39,102 +38,11 @@
     color: var(--text);
     font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
     font-size: 12px;
-    display: flex;
-    flex-direction: column;
   }
-
-  /* ===== TOOLBAR ===== */
-  #toolbar {
-    height: var(--toolbar-h);
-    background: var(--panel-2);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    padding: 0 8px;
-    gap: 4px;
-    flex-shrink: 0;
-    position: relative;
-    z-index: 100;
-    user-select: none;
-    overflow: hidden;
-    transition: height 0.2s ease, opacity 0.15s ease, border-color 0.2s ease;
-  }
-
-  body.toolbar-hidden #toolbar {
-    height: 0;
-    opacity: 0;
-    pointer-events: none;
-    border-bottom-color: transparent;
-  }
-
-  /* Hover zone at top of window to reveal toolbar when auto-hidden */
-  #toolbar-reveal-zone {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 6px;
-    z-index: 200;
-    display: none;
-  }
-  body.toolbar-hidden #toolbar-reveal-zone { display: block; }
-
-  .toolbar-brand {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.3px;
-    padding: 0 8px 0 4px;
-    white-space: nowrap;
-  }
-
-  .tb-divider {
-    width: 1px;
-    height: 16px;
-    background: var(--border);
-    margin: 0 2px;
-    flex-shrink: 0;
-  }
-
-  .tb-spacer { flex: 1; }
-
-  .tb-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    padding: 4px 10px;
-    font-size: 11px;
-    border-radius: 4px;
-    font-family: inherit;
-    transition: color 0.1s ease, background 0.1s ease, border-color 0.1s ease;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    line-height: 1;
-  }
-  .tb-btn:hover {
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.06);
-  }
-  .tb-btn.active {
-    color: var(--accent);
-    background: var(--accent-dim);
-    border-color: rgba(123, 140, 255, 0.25);
-  }
-  .tb-btn.primary {
-    background: var(--accent);
-    color: #0c0c0f;
-    border-color: var(--accent);
-    font-weight: 600;
-  }
-  .tb-btn.primary:hover { opacity: 0.88; }
 
   /* ===== GRID ===== */
   .grid-wrapper {
-    flex: 1;
-    min-height: 0;
+    height: 100vh;
     width: 100vw;
     overflow: hidden;
     background: var(--bg);
@@ -640,22 +548,6 @@
 </head>
 <body>
 
-<!-- TOOLBAR -->
-<div id="toolbar">
-  <span class="toolbar-brand">◈ aaroneal</span>
-  <div class="tb-divider"></div>
-  <button class="tb-btn primary" onclick="addPanelDialog()">+ Add Panel</button>
-  <button class="tb-btn" id="tb-lock" onclick="toggleLock()">⊘ Lock Layout</button>
-  <button class="tb-btn" onclick="reloadAll()" title="Ctrl+Shift+R">↺ Reload All</button>
-  <div class="tb-divider"></div>
-  <button class="tb-btn" onclick="saveCurrentAsLayout()">↓ Save Layout</button>
-  <div class="tb-spacer"></div>
-  <button class="tb-btn" onclick="openSettings()" title="Ctrl+,">⚙ Settings</button>
-</div>
-
-<!-- Toolbar reveal zone (only active when toolbar is auto-hidden) -->
-<div id="toolbar-reveal-zone"></div>
-
 <!-- GRID -->
 <div class="grid-wrapper" id="grid-wrapper">
   <div class="grid-stack" id="grid"></div>
@@ -1091,17 +983,13 @@
   }
 
   // ============ INIT ============
-  const TOOLBAR_H = 36; // keep in sync with --toolbar-h
-
-  function calculateCellHeight(opts) {
-    return calculateCellHeightForRows(settings.rows, settings.gap, opts);
+  function calculateCellHeight() {
+    return calculateCellHeightForRows(settings.rows, settings.gap);
   }
 
-  function calculateCellHeightForRows(rows, gap, opts = {}) {
-    const hidden = opts.assumeVisible ? false : document.body.classList.contains('toolbar-hidden');
-    const toolbarH = hidden ? 0 : TOOLBAR_H;
+  function calculateCellHeightForRows(rows, gap) {
     const totalGap = gap * (rows + 1);
-    const available = window.innerHeight - toolbarH - totalGap;
+    const available = window.innerHeight - totalGap;
     return Math.max(8, available / rows);
   }
 
@@ -1678,11 +1566,6 @@
     grid.engine.nodes.forEach(node => {
       grid.update(node.el, { noMove: isLocked, noResize: isLocked, locked: isLocked });
     });
-    const btn = document.getElementById('tb-lock');
-    if (btn) {
-      btn.textContent = isLocked ? '⊗ Locked' : '⊘ Lock Layout';
-      btn.classList.toggle('active', isLocked);
-    }
   }
 
   async function resetLayout() {
@@ -1846,73 +1729,12 @@
     }
   }
 
-  // ============ TOOLBAR AUTO-HIDE ============
-  let _toolbarAutoHide = false;
-  let _toolbarHideTimer = null;
-  let _toolbarPinned = false;
-
-  function loadToolbarAutoHide() {
-    try { _toolbarAutoHide = JSON.parse(localStorage.getItem('toolbarAutoHide') || 'false'); } catch { _toolbarAutoHide = false; }
-    applyToolbarAutoHide();
-  }
-
-  function setToolbarAutoHide(enabled) {
-    _toolbarAutoHide = enabled;
-    localStorage.setItem('toolbarAutoHide', JSON.stringify(enabled));
-    applyToolbarAutoHide();
-    notifyMenuUpdate();
-  }
-
-  function applyToolbarAutoHide() {
-    if (_toolbarAutoHide) {
-      scheduleToolbarHide();
-    } else {
-      clearTimeout(_toolbarHideTimer);
-      document.body.classList.remove('toolbar-hidden');
-      if (grid) grid.cellHeight(calculateCellHeight());
-    }
-  }
-
-  const TOOLBAR_TRANSITION_MS = 220; // matches CSS transition duration
-
-  function scheduleToolbarHide() {
-    if (!_toolbarAutoHide || _toolbarPinned) return;
-    clearTimeout(_toolbarHideTimer);
-    _toolbarHideTimer = setTimeout(() => {
-      document.body.classList.add('toolbar-hidden');
-      // Wait for the collapse transition to finish before expanding grid cells
-      setTimeout(() => { if (grid) grid.cellHeight(calculateCellHeight()); }, TOOLBAR_TRANSITION_MS);
-    }, 2000);
-  }
-
-  function revealToolbar() {
-    if (!_toolbarAutoHide) return;
-    clearTimeout(_toolbarHideTimer);
-    // Shrink cell height immediately so grid never overlaps the incoming toolbar
-    if (grid) grid.cellHeight(calculateCellHeight({ assumeVisible: true }));
-    document.body.classList.remove('toolbar-hidden');
-    scheduleToolbarHide();
-  }
-
-  document.getElementById('toolbar').addEventListener('mouseenter', () => {
-    if (!_toolbarAutoHide) return;
-    _toolbarPinned = true;
-    clearTimeout(_toolbarHideTimer);
-    if (grid) grid.cellHeight(calculateCellHeight({ assumeVisible: true }));
-    document.body.classList.remove('toolbar-hidden');
-  });
-  document.getElementById('toolbar').addEventListener('mouseleave', () => {
-    _toolbarPinned = false;
-    scheduleToolbarHide();
-  });
-  document.getElementById('toolbar-reveal-zone').addEventListener('mouseenter', revealToolbar);
-
   // ============ NATIVE MENU SYNC ============
   function notifyMenuUpdate() {
     if (!window.electronAPI) return;
     const layouts = getSavedLayouts().map((l, i) => ({ name: l.name, index: i }));
     const closedData = closedPanels.map((p, i) => ({ title: p.title, index: i }));
-    window.electronAPI.updateMenu({ layouts, closedPanels: closedData, toolbarAutoHide: _toolbarAutoHide });
+    window.electronAPI.updateMenu({ layouts, closedPanels: closedData });
   }
 
   // ============ SHORTCUTS ============
@@ -1933,7 +1755,6 @@
   bindSettingsControls();
   loadLayout();
   applySettings();
-  loadToolbarAutoHide();
   notifyMenuUpdate();
 
   if (window.electronAPI) {

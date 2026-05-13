@@ -249,7 +249,7 @@ ipcMain.on('bv-set-visible',    (_e, visible) => visible ? showAllBVs() : hideAl
 // ─── Native menu ─────────────────────────────────────────────────────────────
 
 let mainWin = null;
-let menuData = { layouts: [], closedPanels: [], toolbarAutoHide: false };
+let menuData = { layouts: [], closedPanels: [] };
 
 function buildMenu() {
   if (!mainWin) return;
@@ -310,9 +310,6 @@ function buildMenu() {
         { label: 'Reload All Panels',      accelerator: 'CmdOrCtrl+Shift+R', click: js('reloadAll()') },
         { type: 'separator' },
         { label: 'Toggle Lock',            accelerator: 'CmdOrCtrl+L',       click: js('toggleLock()') },
-        { type: 'separator' },
-        { label: 'Auto-hide Toolbar', type: 'checkbox', checked: !!menuData.toolbarAutoHide,
-          click: (item) => win.webContents.executeJavaScript(`setToolbarAutoHide(${item.checked})`).catch(() => {}) },
         { type: 'separator' },
         { label: 'Toggle Developer Tools', accelerator: 'CmdOrCtrl+Shift+I',
           click: () => win.webContents.toggleDevTools() },
