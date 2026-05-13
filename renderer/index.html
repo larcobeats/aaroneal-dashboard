@@ -840,7 +840,9 @@
   function calculateCellHeightForRows(rows, gap) {
     const totalGap = gap * (rows + 1);
     const available = window.innerHeight - totalGap;
-    return Math.max(8, Math.floor(available / rows));
+    // No Math.floor — fractional pixel heights eliminate the gap at the bottom
+    // that rounding-down accumulates across all rows.
+    return Math.max(8, available / rows);
   }
 
   function injectColumnCSS(columnCount) {
@@ -882,10 +884,11 @@
       grid.opts.maxRow = settings.rows;
       bvHide();
     });
-    grid.on('dragstop', () => {
+    grid.on('dragstop', (e, el) => {
       document.body.classList.remove('dragging');
       grid.opts.maxRow = 0;
-      bvShow(); // syncs bounds + restores visibility
+      autoFillPanel(el?.gridstackNode, el); // expand into empty space before restoring BVs
+      bvShow(); // syncs bounds (after fill) + restores visibility
       saveLayout();
     });
 
@@ -931,10 +934,10 @@
   }
 
   // ── Double-click resize handle → snap panel to nearest window edge ────────
-  // Double-clicking any resize handle expands the panel flush to the corresponding
-  // window edge in grid units.  Works for all 8 handle directions (n/s/e/w and
-  // diagonals).  Right/bottom handles expand outward; left/top handles expand
-  // toward the origin.
+  // Double-click any resize handle → snap to the nearest adjacent panel edge
+  // (or the window edge if no panel is in that direction).
+  // Works for all 8 handle directions. Corner handles (SE, SW, etc.) snap
+  // in both of their axes simultaneously.
   function setupEdgeDoubleClick() {
     document.getElementById('grid').addEventListener('dblclick', e => {
       const handle = e.target.closest('.ui-resizable-handle');
@@ -961,17 +964,87 @@
 
       const cols    = grid.opts.column;
       const maxRows = settings.rows;
+      const others  = grid.engine.nodes.filter(n => n.id !== node.id);
+
+      // Helper: find nearest panel edge in a direction, only considering panels
+      // that overlap in the perpendicular axis (so we only snap to panels the
+      // expanding edge would actually collide with).
+      const nearestRight = () => {
+        const hit = others.filter(n =>
+          n.x >= node.x + node.w &&          // panel is to the right
+          n.y < node.y + node.h && n.y + n.h > node.y // overlaps vertically
+        ).sort((a, b) => a.x - b.x)[0];
+        return hit ? hit.x - node.x : cols - node.x;
+      };
+      const nearestBottom = () => {
+        const hit = others.filter(n =>
+          n.y >= node.y + node.h &&
+          n.x < node.x + node.w && n.x + n.w > node.x
+        ).sort((a, b) => a.y - b.y)[0];
+        return hit ? hit.y - node.y : maxRows - node.y;
+      };
+      const nearestLeft = () => {
+        const hit = others.filter(n =>
+          n.x + n.w <= node.x &&
+          n.y < node.y + node.h && n.y + n.h > node.y
+        ).sort((a, b) => b.x - a.x)[0];
+        return hit ? hit.x + hit.w : 0;
+      };
+      const nearestTop = () => {
+        const hit = others.filter(n =>
+          n.y + n.h <= node.y &&
+          n.x < node.x + node.w && n.x + n.w > node.x
+        ).sort((a, b) => b.y - a.y)[0];
+        return hit ? hit.y + hit.h : 0;
+      };
+
       const updates = {};
-      if (toRight)  updates.w = cols    - node.x;
-      if (toBottom) updates.h = maxRows - node.y;
-      if (toLeft)  { updates.x = 0; updates.w = node.x + node.w; }
-      if (toTop)   { updates.y = 0; updates.h = node.y + node.h; }
+      if (toRight)  updates.w = nearestRight();
+      if (toBottom) updates.h = nearestBottom();
+      if (toLeft)  { const nx = nearestLeft(); updates.x = nx; updates.w = node.x + node.w - nx; }
+      if (toTop)   { const ny = nearestTop();  updates.y = ny; updates.h = node.y + node.h - ny; }
 
       if (Object.keys(updates).length > 0) {
         grid.update(item, updates);
+        syncAllBVBounds();
         saveLayout();
       }
     });
+  }
+
+  // Auto-fill: when a panel is dropped into a region with open space, expand
+  // it to fill the available gap in both axes.  Only expands into truly empty
+  // cells — stops at the first cell occupied by another panel.
+  function autoFillPanel(node, el) {
+    if (!node || !el) return;
+    const cols    = grid.opts.column;
+    const maxRows = settings.rows;
+    const others  = grid.engine.nodes.filter(n => n.id !== node.id);
+
+    const cellOccupied = (col, row) =>
+      others.some(n => n.x <= col && col < n.x + n.w && n.y <= row && row < n.y + n.h);
+
+    // Expand right
+    let newW = node.w;
+    for (let col = node.x + node.w; col < cols; col++) {
+      const blocked = Array.from({ length: node.h }, (_, i) => node.y + i)
+                           .some(row => cellOccupied(col, row));
+      if (blocked) break;
+      newW++;
+    }
+
+    // Expand down (using the new width so we fill the full rectangle)
+    let newH = node.h;
+    for (let row = node.y + node.h; row < maxRows; row++) {
+      const blocked = Array.from({ length: newW }, (_, i) => node.x + i)
+                           .some(col => cellOccupied(col, row));
+      if (blocked) break;
+      newH++;
+    }
+
+    if (newW !== node.w || newH !== node.h) {
+      grid.update(el, { w: newW, h: newH });
+    }
   }
 
   // ── BrowserView panel management ─────────────────────────────────────────────
