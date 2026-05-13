@@ -25,7 +25,7 @@
     --danger:       #ff5264;
     --danger-dim:   rgba(255, 82, 100, 0.12);
     --toolbar-h:    36px;
-    --header-h:     28px;
+    --header-h:     22px;
     --gap:          0px;
   }
 
@@ -39,6 +39,8 @@
     color: var(--text);
     font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
     font-size: 12px;
+    display: flex;
+    flex-direction: column;
   }
 
   /* ===== TOOLBAR ===== */
@@ -54,7 +56,28 @@
     position: relative;
     z-index: 100;
     user-select: none;
+    overflow: hidden;
+    transition: height 0.2s ease, opacity 0.15s ease, border-color 0.2s ease;
   }
+
+  body.toolbar-hidden #toolbar {
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+    border-bottom-color: transparent;
+  }
+
+  /* Hover zone at top of window to reveal toolbar when auto-hidden */
+  #toolbar-reveal-zone {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    z-index: 200;
+    display: none;
+  }
+  body.toolbar-hidden #toolbar-reveal-zone { display: block; }
 
   .toolbar-brand {
     font-size: 12px;
@@ -110,7 +133,8 @@
 
   /* ===== GRID ===== */
   .grid-wrapper {
-    height: calc(100vh - var(--toolbar-h));
+    flex: 1;
+    min-height: 0;
     width: 100vw;
     overflow: hidden;
     background: var(--bg);
@@ -134,7 +158,16 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.2s ease, border-radius 0.2s ease;
+  }
+
+  /* Locked: borderless seamless tiles */
+  body.locked .grid-stack-item-content {
+    border-color: transparent;
+    border-radius: 0;
+  }
+  body.locked .panel-header {
+    border-bottom-color: transparent;
   }
 
   .grid-stack-item-content,
@@ -620,6 +653,9 @@
   <button class="tb-btn" onclick="openSettings()" title="Ctrl+,">⚙ Settings</button>
 </div>
 
+<!-- Toolbar reveal zone (only active when toolbar is auto-hidden) -->
+<div id="toolbar-reveal-zone"></div>
+
 <!-- GRID -->
 <div class="grid-wrapper" id="grid-wrapper">
   <div class="grid-stack" id="grid"></div>
@@ -1062,8 +1098,9 @@
   }
 
   function calculateCellHeightForRows(rows, gap) {
+    const toolbarH = document.body.classList.contains('toolbar-hidden') ? 0 : TOOLBAR_H;
     const totalGap = gap * (rows + 1);
-    const available = window.innerHeight - TOOLBAR_H - totalGap;
+    const available = window.innerHeight - toolbarH - totalGap;
     return Math.max(8, available / rows);
   }
 
@@ -1808,12 +1845,69 @@
     }
   }
 
+  // ============ TOOLBAR AUTO-HIDE ============
+  let _toolbarAutoHide = false;
+  let _toolbarHideTimer = null;
+  let _toolbarPinned = false;
+
+  function loadToolbarAutoHide() {
+    try { _toolbarAutoHide = JSON.parse(localStorage.getItem('toolbarAutoHide') || 'false'); } catch { _toolbarAutoHide = false; }
+    applyToolbarAutoHide();
+  }
+
+  function setToolbarAutoHide(enabled) {
+    _toolbarAutoHide = enabled;
+    localStorage.setItem('toolbarAutoHide', JSON.stringify(enabled));
+    applyToolbarAutoHide();
+    notifyMenuUpdate();
+  }
+
+  function applyToolbarAutoHide() {
+    if (_toolbarAutoHide) {
+      scheduleToolbarHide();
+    } else {
+      clearTimeout(_toolbarHideTimer);
+      document.body.classList.remove('toolbar-hidden');
+      if (grid) grid.cellHeight(calculateCellHeight());
+    }
+  }
+
+  function scheduleToolbarHide() {
+    if (!_toolbarAutoHide || _toolbarPinned) return;
+    clearTimeout(_toolbarHideTimer);
+    _toolbarHideTimer = setTimeout(() => {
+      document.body.classList.add('toolbar-hidden');
+      if (grid) grid.cellHeight(calculateCellHeight());
+    }, 2000);
+  }
+
+  function revealToolbar() {
+    if (!_toolbarAutoHide) return;
+    clearTimeout(_toolbarHideTimer);
+    document.body.classList.remove('toolbar-hidden');
+    if (grid) grid.cellHeight(calculateCellHeight());
+    scheduleToolbarHide();
+  }
+
+  document.getElementById('toolbar').addEventListener('mouseenter', () => {
+    if (!_toolbarAutoHide) return;
+    _toolbarPinned = true;
+    clearTimeout(_toolbarHideTimer);
+    document.body.classList.remove('toolbar-hidden');
+    if (grid) grid.cellHeight(calculateCellHeight());
+  });
+  document.getElementById('toolbar').addEventListener('mouseleave', () => {
+    _toolbarPinned = false;
+    scheduleToolbarHide();
+  });
+  document.getElementById('toolbar-reveal-zone').addEventListener('mouseenter', revealToolbar);
+
   // ============ NATIVE MENU SYNC ============
   function notifyMenuUpdate() {
     if (!window.electronAPI) return;
     const layouts = getSavedLayouts().map((l, i) => ({ name: l.name, index: i }));
     const closedData = closedPanels.map((p, i) => ({ title: p.title, index: i }));
-    window.electronAPI.updateMenu({ layouts, closedPanels: closedData });
+    window.electronAPI.updateMenu({ layouts, closedPanels: closedData, toolbarAutoHide: _toolbarAutoHide });
   }
 
   // ============ SHORTCUTS ============
@@ -1834,6 +1928,7 @@
   bindSettingsControls();
   loadLayout();
   applySettings();
+  loadToolbarAutoHide();
   notifyMenuUpdate();
 
   if (window.electronAPI) {
