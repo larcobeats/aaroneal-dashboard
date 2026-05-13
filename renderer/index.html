@@ -890,10 +890,18 @@
       disableOneColumnMode: true
     });
 
-    grid.on('dragstart', () => document.body.classList.add('dragging'));
-    grid.on('dragstop',  () => { document.body.classList.remove('dragging'); saveLayout(); });
+    grid.on('dragstart', () => {
+      document.body.classList.add('dragging');
+      grid.opts.maxRow = settings.rows; // clamp: panel can't be dragged below viewport
+    });
+    grid.on('dragstop', () => {
+      document.body.classList.remove('dragging');
+      grid.opts.maxRow = 0;
+      saveLayout();
+    });
 
     setupResizeHandlers();
+    setupEdgeDoubleClick();
 
     grid.on('change',          saveLayout);
     grid.on('added removed',   saveLayout);
@@ -919,25 +927,75 @@
   // lets them overlap or snap as needed without forced coupling.
 
   function setupResizeHandlers() {
-    grid.on('resizestart', () => document.body.classList.add('dragging'));
-    grid.on('resizestop',  () => { document.body.classList.remove('dragging'); saveLayout(); });
+    grid.on('resizestart', () => {
+      document.body.classList.add('dragging');
+      grid.opts.maxRow = settings.rows; // clamp: panel can't be resized below viewport
+    });
+    grid.on('resizestop', () => {
+      document.body.classList.remove('dragging');
+      grid.opts.maxRow = 0;
+      saveLayout();
+    });
+  }
+
+  // ── Double-click resize handle → snap panel to nearest window edge ────────
+  // Double-clicking any resize handle expands the panel flush to the corresponding
+  // window edge in grid units.  Works for all 8 handle directions (n/s/e/w and
+  // diagonals).  Right/bottom handles expand outward; left/top handles expand
+  // toward the origin.
+  function setupEdgeDoubleClick() {
+    document.getElementById('grid').addEventListener('dblclick', e => {
+      const handle = e.target.closest('.ui-resizable-handle');
+      if (!handle) return;
+      const item = handle.closest('.grid-stack-item');
+      if (!item) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const node = item.gridstackNode;
+      if (!node) return;
+
+      const toRight  = handle.classList.contains('ui-resizable-e')  ||
+                       handle.classList.contains('ui-resizable-ne') ||
+                       handle.classList.contains('ui-resizable-se');
+      const toBottom = handle.classList.contains('ui-resizable-s')  ||
+                       handle.classList.contains('ui-resizable-se') ||
+                       handle.classList.contains('ui-resizable-sw');
+      const toLeft   = handle.classList.contains('ui-resizable-w')  ||
+                       handle.classList.contains('ui-resizable-nw') ||
+                       handle.classList.contains('ui-resizable-sw');
+      const toTop    = handle.classList.contains('ui-resizable-n')  ||
+                       handle.classList.contains('ui-resizable-ne') ||
+                       handle.classList.contains('ui-resizable-nw');
+
+      const cols    = grid.opts.column;
+      const maxRows = settings.rows;
+      const updates = {};
+      if (toRight)  updates.w = cols    - node.x;
+      if (toBottom) updates.h = maxRows - node.y;
+      if (toLeft)  { updates.x = 0; updates.w = node.x + node.w; }
+      if (toTop)   { updates.y = 0; updates.h = node.y + node.h; }
+
+      if (Object.keys(updates).length > 0) {
+        grid.update(item, updates);
+        saveLayout();
+      }
+    });
   }
 
   // ── Webview viewport fix ──────────────────────────────────────────────────
-  // Electron's <webview> renderer process locks in its viewport size when the
-  // guest renderer process is first created — at the moment src is set.
-  // If clientHeight is 0 at that instant (JS style-batching, pre-paint timing),
-  // the guest renderer starts with a 0px viewport and stays cropped forever.
+  // Electron's <webview> has a documented bug where the internal Chromium guest
+  // renderer can be created with the wrong viewport size regardless of CSS height.
+  // The fix uses two Electron-specific APIs working together:
   //
-  // Strategy:
-  //   1. Use data-src to delay loading until we have a real pixel height.
-  //   2. Set style.height, force a synchronous layout flush (void offsetHeight),
-  //      THEN set src — so Electron reads the correct clientHeight.
-  //   3. After dom-ready, ask the guest page its actual window.innerHeight via
-  //      executeJavaScript. If it doesn't match (common on startup due to race),
-  //      tear out the webview element entirely and rebuild it — this time with
-  //      height baked into style BEFORE src is ever touched, guaranteeing the
-  //      guest renderer process is created at the right size.
+  //   disableguestresize (HTML attribute) — tells Electron NOT to auto-resize the
+  //     guest viewport when the element's CSS size changes. Without this, Electron
+  //     competes with our manual calls and can clobber them with stale 0px values.
+  //
+  //   webview.setSize({ normal: { width, height } }) — explicitly sets the
+  //     Chromium guest renderer's viewport to exact pixel dimensions, bypassing
+  //     whatever clientHeight Electron may have read from the DOM.
+  //
+  // Combined: we own the viewport size completely, so it's always correct.
 
   const _webviewObservers = new Map(); // panelId → ResizeObserver
 
@@ -945,74 +1003,47 @@
     const content = document.getElementById(`content-${id}`);
     if (!content) return;
     const body = content.querySelector('.panel-body');
-    let wv = content.querySelector('webview'); // mutable — may be replaced by reinit
+    const wv   = content.querySelector('webview');
     if (!body || !wv) return;
 
-    const getHeight = () => {
+    // Set both the CSS size (visual) and the Chromium guest viewport (logical).
+    // Called at init, after every load, and on every ResizeObserver tick.
+    const applySize = () => {
       let h = body.getBoundingClientRect().height;
       if (h <= 0) {
+        // Pre-paint fallback: GridStack stamps style.height on the item synchronously.
         const gsItem = body.closest('.grid-stack-item');
-        const itemH = gsItem ? (parseFloat(gsItem.style.height) || 0) : 0;
-        if (itemH > 0) h = itemH - 24 - 2; // subtract header (24px) + border (2px)
+        const itemH  = gsItem ? (parseFloat(gsItem.style.height) || 0) : 0;
+        if (itemH > 0) h = itemH - 24 - 2; // header 24px + border 2px
       }
+      if (h <= 0) return 0;
+      const w = Math.round(body.getBoundingClientRect().width || body.offsetWidth || 400);
+      wv.style.height = h + 'px';
+      try { wv.setSize({ normal: { width: w, height: Math.round(h) } }); } catch {}
       return h;
     };
 
-    const syncHeight = () => {
-      const h = getHeight();
-      if (h > 0) wv.style.height = h + 'px';
-      return h;
-    };
-
-    // ResizeObserver keeps height synced on every future GridStack / window resize.
-    // It observes body (the stable container), and syncHeight writes to wv (the
-    // closure variable) — so if wv is replaced by reinit, the new element gets
-    // updated correctly without re-subscribing.
-    const ro = new ResizeObserver(syncHeight);
+    // ResizeObserver keeps both dimensions correct on every GridStack / window resize.
+    const ro = new ResizeObserver(applySize);
     ro.observe(body);
     _webviewObservers.set(id, ro);
-
-    // After the guest page reports dom-ready, verify its actual viewport height
-    // via executeJavaScript. If Electron gave it the wrong size (race condition
-    // at startup), replace the webview element entirely. The replacement has its
-    // style.height set BEFORE src so the guest renderer process is created with
-    // the correct viewport from the very first frame.
-    const checkAndReinit = async () => {
-      if (!body.isConnected) return;
-      const h = getHeight();
-      if (h <= 0) return;
-      let guestH = 0;
-      try { guestH = await wv.executeJavaScript('window.innerHeight'); } catch {}
-      if (Math.abs(guestH - h) <= 20) return; // viewport is correct — nothing to do
-      // Viewport mismatch — tear out and rebuild with correct height baked in
-      const src       = wv.src || wv.getAttribute('data-src') || '';
-      const partition = wv.getAttribute('partition') || '';
-      wv.remove();
-      const nw = document.createElement('webview');
-      nw.setAttribute('allowpopups', '');
-      if (partition) nw.setAttribute('partition', partition);
-      nw.style.cssText = `position:absolute;top:0;left:0;right:0;height:${h}px;border:0;display:block;`;
-      body.appendChild(nw);
-      void nw.offsetHeight; // flush layout so Electron reads correct clientHeight
-      nw.setAttribute('src', src);
-      wv = nw; // update closure so syncHeight / future calls target new element
-    };
 
     const activateSrc = () => {
       if (wv.hasAttribute('src')) return;
       const src = wv.getAttribute('data-src');
       if (!src) return;
-      syncHeight();           // stamp height before flush
-      void wv.offsetHeight;   // force synchronous layout recalc
+      applySize();
+      void wv.offsetHeight; // synchronous layout flush before src triggers guest creation
       wv.setAttribute('src', src);
-      wv.addEventListener('dom-ready', checkAndReinit, { once: true });
+      // Re-apply after every page load (initial + reloads + navigations).
+      wv.addEventListener('dom-ready',       () => applySize());
+      wv.addEventListener('did-finish-load', () => applySize());
     };
 
-    // rAF retry loop: GridStack may not have applied pixel dimensions yet at
-    // addWidget time (especially panels restored from saved layout on startup).
+    // rAF retry: GridStack may not have applied pixel dimensions at addWidget time.
     let attempts = 0;
     const tryInit = () => {
-      const h = syncHeight();
+      const h = applySize();
       if (h > 0) {
         activateSrc();
       } else if (++attempts < 20) {
@@ -1048,7 +1079,7 @@
           </div>
         </div>
         <div class="panel-body">
-          <webview data-src="${escapeHtml(url)}" allowpopups partition="persist:main"></webview>
+          <webview data-src="${escapeHtml(url)}" allowpopups partition="persist:main" disableguestresize></webview>
         </div>
       `;
     }
