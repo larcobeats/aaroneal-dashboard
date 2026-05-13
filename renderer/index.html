@@ -1093,12 +1093,13 @@
   // ============ INIT ============
   const TOOLBAR_H = 36; // keep in sync with --toolbar-h
 
-  function calculateCellHeight() {
-    return calculateCellHeightForRows(settings.rows, settings.gap);
+  function calculateCellHeight(opts) {
+    return calculateCellHeightForRows(settings.rows, settings.gap, opts);
   }
 
-  function calculateCellHeightForRows(rows, gap) {
-    const toolbarH = document.body.classList.contains('toolbar-hidden') ? 0 : TOOLBAR_H;
+  function calculateCellHeightForRows(rows, gap, opts = {}) {
+    const hidden = opts.assumeVisible ? false : document.body.classList.contains('toolbar-hidden');
+    const toolbarH = hidden ? 0 : TOOLBAR_H;
     const totalGap = gap * (rows + 1);
     const available = window.innerHeight - toolbarH - totalGap;
     return Math.max(8, available / rows);
@@ -1872,20 +1873,24 @@
     }
   }
 
+  const TOOLBAR_TRANSITION_MS = 220; // matches CSS transition duration
+
   function scheduleToolbarHide() {
     if (!_toolbarAutoHide || _toolbarPinned) return;
     clearTimeout(_toolbarHideTimer);
     _toolbarHideTimer = setTimeout(() => {
       document.body.classList.add('toolbar-hidden');
-      if (grid) grid.cellHeight(calculateCellHeight());
+      // Wait for the collapse transition to finish before expanding grid cells
+      setTimeout(() => { if (grid) grid.cellHeight(calculateCellHeight()); }, TOOLBAR_TRANSITION_MS);
     }, 2000);
   }
 
   function revealToolbar() {
     if (!_toolbarAutoHide) return;
     clearTimeout(_toolbarHideTimer);
+    // Shrink cell height immediately so grid never overlaps the incoming toolbar
+    if (grid) grid.cellHeight(calculateCellHeight({ assumeVisible: true }));
     document.body.classList.remove('toolbar-hidden');
-    if (grid) grid.cellHeight(calculateCellHeight());
     scheduleToolbarHide();
   }
 
@@ -1893,8 +1898,8 @@
     if (!_toolbarAutoHide) return;
     _toolbarPinned = true;
     clearTimeout(_toolbarHideTimer);
+    if (grid) grid.cellHeight(calculateCellHeight({ assumeVisible: true }));
     document.body.classList.remove('toolbar-hidden');
-    if (grid) grid.cellHeight(calculateCellHeight());
   });
   document.getElementById('toolbar').addEventListener('mouseleave', () => {
     _toolbarPinned = false;
