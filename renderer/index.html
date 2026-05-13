@@ -142,6 +142,10 @@
     flex-shrink: 0;
     cursor: move;
     user-select: none;
+    transition: background 0.1s ease;
+  }
+  body:not(.locked) .panel-header:hover {
+    background: #252529;
   }
 
   .panel-header .title-group {
@@ -177,12 +181,14 @@
     border: 1px solid transparent;
     color: var(--text-dim);
     cursor: pointer;
-    padding: 1px 6px;
+    padding: 2px 7px;
     font-size: 11px;
     border-radius: 2px;
     transition: all 0.1s ease;
     font-family: inherit;
     line-height: 1;
+    min-width: 22px;
+    text-align: center;
   }
 
   .panel-header button:hover {
@@ -430,6 +436,62 @@
     margin-top: 8px;
     margin-bottom: 8px;
   }
+
+  /* ===== MODAL CLOSE BUTTON ===== */
+  .modal-close-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1;
+    font-family: inherit;
+    transition: color 0.1s ease, background 0.1s ease;
+  }
+  .modal-close-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* ===== FOCUS RINGS ===== */
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* ===== MODAL ENTRANCE ANIMATION ===== */
+  @keyframes modalSlideIn {
+    from { opacity: 0; transform: scale(0.97) translateY(-8px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
+  }
+  .modal-overlay.show .modal {
+    animation: modalSlideIn 0.15s ease;
+  }
+
+  /* ===== LOCKED STATE ===== */
+  body.locked .panel-header .dot {
+    background: #f0a000;
+    box-shadow: 0 0 6px rgba(240, 160, 0, 0.4);
+  }
+
+  /* ===== UPDATE PROGRESS BAR ===== */
+  .update-progress {
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .update-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
 </style>
 </head>
 <body>
@@ -444,7 +506,7 @@
   <div class="modal">
     <div class="modal-header">
       <span>Add Panel</span>
-      <button onclick="closeAddModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+      <button class="modal-close-btn" onclick="closeAddModal()">&#10005;</button>
     </div>
     <div class="modal-body">
       <label>Quick Presets</label>
@@ -476,7 +538,7 @@
   <div class="modal">
     <div class="modal-header">
       <span>Settings</span>
-      <button onclick="cancelSettings()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+      <button class="modal-close-btn" onclick="cancelSettings()">&#10005;</button>
     </div>
     <div class="modal-body">
 
@@ -530,7 +592,7 @@
   <div class="modal" style="width:420px;">
     <div class="modal-header">
       <span id="update-modal-title">Updates</span>
-      <button onclick="closeUpdateModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+      <button class="modal-close-btn" onclick="closeUpdateModal()">&#10005;</button>
     </div>
     <div class="modal-body" id="update-modal-body" style="padding:24px 16px;text-align:center;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
     </div>
@@ -543,7 +605,7 @@
   <div class="modal" style="width:400px;">
     <div class="modal-header">
       <span>Save Current Layout</span>
-      <button onclick="closeSaveLayoutModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+      <button class="modal-close-btn" onclick="closeSaveLayoutModal()">&#10005;</button>
     </div>
     <div class="modal-body">
       <label>Layout Name</label>
@@ -562,7 +624,7 @@
   <div class="modal" style="width:520px;">
     <div class="modal-header">
       <span>Edit Panel URL</span>
-      <button onclick="closeEditUrlModal()" style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;font-size:14px;">&#10005;</button>
+      <button class="modal-close-btn" onclick="closeEditUrlModal()">&#10005;</button>
     </div>
     <div class="modal-body">
       <label>URL</label>
@@ -1314,10 +1376,13 @@
     addPanel(id, { ...preset, preset: presetKey });
     closeAddModal();
   }
-  function addCustomPanel() {
+  async function addCustomPanel() {
     const name = document.getElementById('custom-name').value.trim();
     const url = document.getElementById('custom-url').value.trim();
-    if (!name || !url) { alert('Please provide both a name and a URL.'); return; }
+    if (!name || !url) {
+      await showConfirm('Missing Fields', 'Please provide both a name and a URL.', 'OK');
+      return;
+    }
     const id = `p-custom-${Date.now()}`;
     addPanel(id, { title: name, url, w: 8, h: 12 });
     closeAddModal();
@@ -1614,8 +1679,8 @@
         title.textContent = 'Downloading Update';
         body.innerHTML = `
           <span>Downloading… ${pct}%</span>
-          <div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:4px;">
-            <div style="width:${pct}%;height:100%;background:var(--accent);transition:width 0.3s ease;"></div>
+          <div class="update-progress">
+            <div class="update-progress-fill" style="width:${pct}%"></div>
           </div>`;
         break;
       }
