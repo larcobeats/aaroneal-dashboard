@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -388,6 +388,32 @@ autoUpdater.on('error',                err    => { _checkInProgress = false; sen
 
 ipcMain.on('install-update', () => autoUpdater.quitAndInstall());
 
+// ─── Window state persistence ─────────────────────────────────────────────────
+
+const WIN_STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
+
+function loadWindowState() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(WIN_STATE_FILE, 'utf8'));
+    // Ensure the saved position still falls on a connected display
+    const onScreen = screen.getAllDisplays().some(d => {
+      const b = d.bounds;
+      return saved.x >= b.x && saved.y >= b.y &&
+             saved.x + saved.width  <= b.x + b.width &&
+             saved.y + saved.height <= b.y + b.height;
+    });
+    if (onScreen) return saved;
+  } catch {}
+  return { width: 1440, height: 900 }; // default — electron will center it
+}
+
+function saveWindowState(win) {
+  if (!win || win.isMinimized() || win.isMaximized()) return;
+  const [x, y]         = win.getPosition();
+  const [width, height] = win.getSize();
+  try { fs.writeFileSync(WIN_STATE_FILE, JSON.stringify({ x, y, width, height })); } catch {}
+}
+
 // ─── Main window ──────────────────────────────────────────────────────────────
 
 async function createWindow() {
@@ -408,12 +434,13 @@ async function createWindow() {
     console.warn('[7TV] Not found in any Chrome/Edge/Brave profile.');
   }
 
+  const winState = loadWindowState();
+
   mainWin = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...winState,
     minWidth: 800,
     minHeight: 600,
-    backgroundColor: '#0e0e10',
+    backgroundColor: '#0c0c0f',
     title: 'Aaroneal Dashboard',
     autoHideMenuBar: true,
     webPreferences: {
@@ -424,6 +451,16 @@ async function createWindow() {
       partition: 'persist:main',
     },
   });
+
+  // Persist window position/size across restarts
+  let _winSaveTimer;
+  const debouncedSave = () => {
+    clearTimeout(_winSaveTimer);
+    _winSaveTimer = setTimeout(() => saveWindowState(mainWin), 500);
+  };
+  mainWin.on('resize', debouncedSave);
+  mainWin.on('move',   debouncedSave);
+  mainWin.on('close',  () => saveWindowState(mainWin));
 
   buildMenu();
   applyWindowOpenHandler(mainWin.webContents);
