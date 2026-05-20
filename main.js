@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, Notification, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -366,6 +366,12 @@ function sendUpdateStatus(payload) {
 let _checkInProgress = false;
 let _manualCheck     = false;
 
+function notify(title, body) {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
+}
+
 function triggerUpdateCheck() {
   if (_checkInProgress) return;
   _manualCheck = true;
@@ -374,8 +380,13 @@ function triggerUpdateCheck() {
   autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
   autoUpdater.checkForUpdates()
     .catch(err => {
+      // Safety net: 'error' event handles most failures; this catches synchronous throws
+      if (!_checkInProgress) return; // already handled by the error event
       _checkInProgress = false;
-      sendUpdateStatus({ state: 'error', message: err.message });
+      const manual = _manualCheck;
+      _manualCheck = false;
+      sendUpdateStatus({ state: 'error', message: err.message, manual });
+      if (manual) notify('Aaroneal Dashboard — Update Failed', err.message || 'Update check failed');
     });
 }
 
@@ -402,6 +413,8 @@ autoUpdater.on('update-not-available', info => {
   _manualCheck = false;
   sendUpdateStatus({ state: 'not-available', version: info.version, manual });
   if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
+  // Native notification — always visible regardless of BrowserView layout
+  notify('Aaroneal Dashboard', `You're up to date — v${info.version} is the latest version.`);
 });
 
 autoUpdater.on('update-downloaded', info => {
@@ -418,6 +431,8 @@ autoUpdater.on('error', err => {
   _manualCheck = false;
   sendUpdateStatus({ state: 'error', message: err.message, manual });
   if (mainWin) mainWin.setProgressBar(-1);
+  // Only surface errors on manual checks; silent for background startup checks
+  if (manual) notify('Aaroneal Dashboard — Update Failed', err.message || 'Update check failed');
 });
 
 ipcMain.on('install-update', () => autoUpdater.quitAndInstall());

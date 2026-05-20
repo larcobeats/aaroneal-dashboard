@@ -1776,21 +1776,18 @@
     actions.innerHTML = '';
 
     switch (payload.state) {
-      // ── Always silent — taskbar progress bar handles these ──
+      // ── Silent in the DOM — handled by native OS notification in main.js ──
       case 'checking':
       case 'available':
       case 'downloading':
+      case 'not-available':
+      case 'error':
         _toastShowBVs(); // restore BVs if they were hidden by a prior ready-state toast
         return;
 
-      // ── Not available: always show — BVs stay live, toast sits in corner ──
-      case 'not-available':
-        msg.innerHTML = `<strong>You're up to date</strong>v${payload.version} is the latest version.`;
-        // No bvHide() — informational only, auto-dismisses; BVs must keep working
-        _toastDismissTimer = setTimeout(closeUpdateToast, 3000);
-        break;
-
-      // ── Ready: MUST hide BVs — user needs to click Restart or Later ──
+      // ── Ready: DOM toast with bvHide — user must click to install or dismiss ──
+      // This is the only state that needs interactive in-app buttons.
+      // BrowserViews are hidden just for this toast; they stay loaded in the background.
       case 'ready':
         msg.innerHTML = `<strong>Update ready — v${payload.version}</strong>Restart to apply the update.`;
         toast.classList.add('state-ready');
@@ -1798,15 +1795,6 @@
           <button onclick="closeUpdateToast()">Later</button>
           <button class="primary" onclick="window.electronAPI.installUpdate()">Restart &amp; Install</button>`;
         _toastHideBVs();
-        break;
-
-      // ── Error: only show on manual checks; BVs stay live ──
-      case 'error':
-        if (!payload.manual) { _toastShowBVs(); return; }
-        msg.innerHTML = `<strong>Update check failed</strong>${payload.message || 'Unknown error'}`;
-        toast.classList.add('state-error');
-        actions.innerHTML = `<button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>`;
-        _toastDismissTimer = setTimeout(closeUpdateToast, 6000);
         break;
     }
 
