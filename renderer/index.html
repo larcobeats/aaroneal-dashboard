@@ -567,6 +567,30 @@
   }
   .toast-close:hover { color: var(--text); }
   .toast-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .toast-actions button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    transition: color 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+  }
+  .toast-actions button:hover {
+    color: var(--text);
+    border-color: #3a3a4a;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .toast-actions button.primary {
+    background: var(--accent);
+    color: #0c0c0f;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .toast-actions button.primary:hover { opacity: 0.88; }
   .update-progress {
     width: 100%; height: 4px;
     background: var(--border); border-radius: 2px; overflow: hidden;
@@ -1752,24 +1776,23 @@
     actions.innerHTML = '';
 
     switch (payload.state) {
-      // ── Always silent ──
+      // ── Always silent — taskbar progress bar handles these ──
       case 'checking':
       case 'available':
       case 'downloading':
-        _toastShowBVs(); // restore if previously hidden for another state
+        _toastShowBVs(); // restore BVs if they were hidden by a prior ready-state toast
         return;
 
-      // ── Not available: only show toast for manual checks ──
+      // ── Not available: always show — BVs stay live, toast sits in corner ──
       case 'not-available':
-        if (!payload.manual) { _toastShowBVs(); return; }
         msg.innerHTML = `<strong>You're up to date</strong>v${payload.version} is the latest version.`;
-        _toastHideBVs();
+        // No bvHide() — informational only, auto-dismisses; BVs must keep working
         _toastDismissTimer = setTimeout(closeUpdateToast, 3000);
         break;
 
-      // ── Ready: hide BVs so toast is visible, require user action ──
+      // ── Ready: MUST hide BVs — user needs to click Restart or Later ──
       case 'ready':
-        msg.innerHTML  = `<strong>Update ready — v${payload.version}</strong>Restart to apply the update.`;
+        msg.innerHTML = `<strong>Update ready — v${payload.version}</strong>Restart to apply the update.`;
         toast.classList.add('state-ready');
         actions.innerHTML = `
           <button onclick="closeUpdateToast()">Later</button>
@@ -1777,13 +1800,12 @@
         _toastHideBVs();
         break;
 
-      // ── Error: only show toast for manual checks, auto-dismiss after 6 s ──
+      // ── Error: only show on manual checks; BVs stay live ──
       case 'error':
         if (!payload.manual) { _toastShowBVs(); return; }
         msg.innerHTML = `<strong>Update check failed</strong>${payload.message || 'Unknown error'}`;
         toast.classList.add('state-error');
         actions.innerHTML = `<button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>`;
-        _toastHideBVs();
         _toastDismissTimer = setTimeout(closeUpdateToast, 6000);
         break;
     }
