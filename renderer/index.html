@@ -1752,13 +1752,20 @@
     actions.innerHTML = '';
 
     switch (payload.state) {
-      // ── Silent states — window title / taskbar handle progress ──
+      // ── Always silent ──
       case 'checking':
       case 'available':
       case 'downloading':
-      case 'not-available':
         _toastShowBVs(); // restore if previously hidden for another state
         return;
+
+      // ── Not available: only show toast for manual checks ──
+      case 'not-available':
+        if (!payload.manual) { _toastShowBVs(); return; }
+        msg.innerHTML = `<strong>You're up to date</strong>v${payload.version} is the latest version.`;
+        _toastHideBVs();
+        _toastDismissTimer = setTimeout(closeUpdateToast, 3000);
+        break;
 
       // ── Ready: hide BVs so toast is visible, require user action ──
       case 'ready':
@@ -1770,8 +1777,9 @@
         _toastHideBVs();
         break;
 
-      // ── Error: hide BVs, auto-dismiss after 6 s ──
+      // ── Error: only show toast for manual checks, auto-dismiss after 6 s ──
       case 'error':
+        if (!payload.manual) { _toastShowBVs(); return; }
         msg.innerHTML = `<strong>Update check failed</strong>${payload.message || 'Unknown error'}`;
         toast.classList.add('state-error');
         actions.innerHTML = `<button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>`;

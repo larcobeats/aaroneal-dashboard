@@ -398,22 +398,25 @@ autoUpdater.on('download-progress', prog => {
 
 autoUpdater.on('update-not-available', info => {
   _checkInProgress = false;
-  _manualCheck     = false;
-  sendUpdateStatus({ state: 'not-available', version: info.version });
+  const manual = _manualCheck;
+  _manualCheck = false;
+  sendUpdateStatus({ state: 'not-available', version: info.version, manual });
   if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
 });
 
 autoUpdater.on('update-downloaded', info => {
   _checkInProgress = false;
-  _manualCheck     = false;
-  sendUpdateStatus({ state: 'ready', version: info.version });
+  const manual = _manualCheck;
+  _manualCheck = false;
+  sendUpdateStatus({ state: 'ready', version: info.version, manual });
   if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
 });
 
 autoUpdater.on('error', err => {
   _checkInProgress = false;
-  _manualCheck     = false;
-  sendUpdateStatus({ state: 'error', message: err.message });
+  const manual = _manualCheck;
+  _manualCheck = false;
+  sendUpdateStatus({ state: 'error', message: err.message, manual });
   if (mainWin) mainWin.setProgressBar(-1);
 });
 
