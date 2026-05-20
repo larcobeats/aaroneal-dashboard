@@ -525,9 +525,55 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: #3a3a4a; }
 
-  /* update progress bar — used by main-process title bar indicator */
-  .update-progress { display: none; }
-  .update-progress-fill { display: none; }
+  /* ===== UPDATE TOAST ===== */
+  #update-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 240px;
+    max-width: 320px;
+    z-index: 9999;
+    font-size: 12px;
+    color: var(--text);
+    box-shadow: 0 6px 28px rgba(0,0,0,0.55);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    pointer-events: none;
+  }
+  #update-toast.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  #update-toast.state-ready  { border-color: var(--accent); }
+  #update-toast.state-error  { border-color: var(--danger); }
+  .toast-row {
+    display: flex; align-items: flex-start;
+    justify-content: space-between; gap: 10px;
+  }
+  .toast-msg { flex: 1; line-height: 1.5; color: var(--text-dim); }
+  .toast-msg strong { color: var(--text); display: block; margin-bottom: 2px; }
+  .toast-close {
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 15px; padding: 0; line-height: 1; flex-shrink: 0;
+  }
+  .toast-close:hover { color: var(--text); }
+  .toast-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .update-progress {
+    width: 100%; height: 4px;
+    background: var(--border); border-radius: 2px; overflow: hidden;
+  }
+  .update-progress-fill {
+    height: 100%; background: var(--accent); transition: width 0.3s ease;
+  }
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -540,6 +586,18 @@
 <!-- GRID -->
 <div class="grid-wrapper" id="grid-wrapper">
   <div class="grid-stack" id="grid"></div>
+</div>
+
+<!-- UPDATE TOAST (rendered above BVs by hiding them first) -->
+<div id="update-toast">
+  <div class="toast-row">
+    <span class="toast-msg" id="update-toast-msg"></span>
+    <button class="toast-close" id="update-toast-close" title="Dismiss">&#10005;</button>
+  </div>
+  <div class="update-progress" id="update-toast-progress" style="display:none">
+    <div class="update-progress-fill" id="update-toast-fill"></div>
+  </div>
+  <div class="toast-actions" id="update-toast-actions"></div>
 </div>
 
 <!-- ADD PANEL MODAL -->
@@ -967,7 +1025,7 @@
   function calculateCellHeightForRows(rows, gap) {
     const totalGap = gap * (rows + 1);
     const available = window.innerHeight - totalGap;
-    return Math.max(8, available / rows);
+    return Math.max(1, available / rows);
   }
 
   function injectColumnCSS(columnCount) {
@@ -1657,11 +1715,73 @@
     if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
   }
 
-  // Update UI is handled natively in main process (above BrowserViews).
-  // These stubs keep Escape-key handler and any other references intact.
-  function showUpdateStatus() {}
-  function closeUpdateModal() {}
-  function closeUpdateToast() {}
+  // ============ UPDATE TOAST ============
+  // BrowserViews are OS overlays — they sit on top of all DOM content.
+  // For states that need user attention we call bvHide() so the toast is
+  // visible, then bvShow() when dismissed.  Transient states are silent.
+  let _toastDismissTimer = null;
+  let _toastBvsHidden    = false;
+
+  function _toastHideBVs() {
+    if (!_toastBvsHidden) { _toastBvsHidden = true; bvHide(); }
+  }
+  function _toastShowBVs() {
+    if (_toastBvsHidden) { _toastBvsHidden = false; bvShow(); }
+  }
+
+  function closeUpdateToast() {
+    clearTimeout(_toastDismissTimer);
+    const t = document.getElementById('update-toast');
+    t.classList.remove('visible', 'state-ready', 'state-error');
+    _toastShowBVs();
+  }
+  function closeUpdateModal() { closeUpdateToast(); }
+
+  document.getElementById('update-toast-close').addEventListener('click', closeUpdateToast);
+
+  function showUpdateStatus(payload) {
+    clearTimeout(_toastDismissTimer);
+    const toast   = document.getElementById('update-toast');
+    const msg     = document.getElementById('update-toast-msg');
+    const progress= document.getElementById('update-toast-progress');
+    const fill    = document.getElementById('update-toast-fill');
+    const actions = document.getElementById('update-toast-actions');
+
+    toast.classList.remove('state-ready', 'state-error');
+    progress.style.display = 'none';
+    actions.innerHTML = '';
+
+    switch (payload.state) {
+      // ── Silent states — window title / taskbar handle progress ──
+      case 'checking':
+      case 'available':
+      case 'downloading':
+      case 'not-available':
+        _toastShowBVs(); // restore if previously hidden for another state
+        return;
+
+      // ── Ready: hide BVs so toast is visible, require user action ──
+      case 'ready':
+        msg.innerHTML  = `<strong>Update ready — v${payload.version}</strong>Restart to apply the update.`;
+        toast.classList.add('state-ready');
+        actions.innerHTML = `
+          <button onclick="closeUpdateToast()">Later</button>
+          <button class="primary" onclick="window.electronAPI.installUpdate()">Restart &amp; Install</button>`;
+        _toastHideBVs();
+        break;
+
+      // ── Error: hide BVs, auto-dismiss after 6 s ──
+      case 'error':
+        msg.innerHTML = `<strong>Update check failed</strong>${payload.message || 'Unknown error'}`;
+        toast.classList.add('state-error');
+        actions.innerHTML = `<button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>`;
+        _toastHideBVs();
+        _toastDismissTimer = setTimeout(closeUpdateToast, 6000);
+        break;
+    }
+
+    toast.classList.add('visible');
+  }
 
   // ============ NATIVE MENU SYNC ============
   function notifyMenuUpdate() {
@@ -1692,7 +1812,11 @@
   loadLockState();
   notifyMenuUpdate();
 
-  // Update UI is handled natively in main process — no renderer wiring needed.
+  if (window.electronAPI) {
+    window.electronAPI.onUpdateStatus(showUpdateStatus);
+    // Recover any state that arrived before this listener registered
+    window.electronAPI.getUpdateStatus().then(p => { if (p) showUpdateStatus(p); }).catch(() => {});
+  }
 </script>
 
 </body>

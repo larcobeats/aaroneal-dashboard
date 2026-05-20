@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, screen, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -375,14 +375,7 @@ function triggerUpdateCheck() {
   autoUpdater.checkForUpdates()
     .catch(err => {
       _checkInProgress = false;
-      if (_manualCheck) {
-        _manualCheck = false;
-        dialog.showMessageBox(mainWin, {
-          type: 'error', title: 'Update Check Failed',
-          message: 'Could not check for updates.',
-          detail: err.message, buttons: ['OK'],
-        });
-      }
+      sendUpdateStatus({ state: 'error', message: err.message });
     });
 }
 
@@ -405,16 +398,9 @@ autoUpdater.on('download-progress', prog => {
 
 autoUpdater.on('update-not-available', info => {
   _checkInProgress = false;
+  _manualCheck     = false;
   sendUpdateStatus({ state: 'not-available', version: info.version });
   if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
-  if (_manualCheck) {
-    _manualCheck = false;
-    dialog.showMessageBox(mainWin, {
-      type: 'info', title: 'Up to Date',
-      message: `You're running the latest version (${info.version}).`,
-      buttons: ['OK'],
-    });
-  }
 });
 
 autoUpdater.on('update-downloaded', info => {
@@ -422,28 +408,13 @@ autoUpdater.on('update-downloaded', info => {
   _manualCheck     = false;
   sendUpdateStatus({ state: 'ready', version: info.version });
   if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
-  dialog.showMessageBox(mainWin, {
-    type: 'info',
-    title: 'Update Ready to Install',
-    message: `Version ${info.version} has been downloaded.`,
-    detail: 'Restart the app now to apply the update, or install it later from Help → Check for Updates.',
-    buttons: ['Restart & Install', 'Later'],
-    defaultId: 0, cancelId: 1,
-  }).then(({ response }) => { if (response === 0) autoUpdater.quitAndInstall(); });
 });
 
 autoUpdater.on('error', err => {
   _checkInProgress = false;
+  _manualCheck     = false;
   sendUpdateStatus({ state: 'error', message: err.message });
   if (mainWin) mainWin.setProgressBar(-1);
-  if (_manualCheck) {
-    _manualCheck = false;
-    dialog.showMessageBox(mainWin, {
-      type: 'error', title: 'Update Check Failed',
-      message: 'Could not check for updates.',
-      detail: err.message, buttons: ['OK'],
-    });
-  }
 });
 
 ipcMain.on('install-update', () => autoUpdater.quitAndInstall());
