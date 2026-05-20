@@ -525,64 +525,9 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: #3a3a4a; }
 
-  /* ===== UPDATE TOAST ===== */
-  #update-toast {
-    position: fixed;
-    bottom: 16px;
-    right: 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    min-width: 230px;
-    max-width: 310px;
-    z-index: 9000;
-    font-size: 12px;
-    color: var(--text);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    opacity: 0;
-    transform: translateY(6px);
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    pointer-events: none;
-  }
-  #update-toast.visible {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-  #update-toast.ready {
-    border-color: var(--accent);
-  }
-  .toast-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .toast-msg { flex: 1; line-height: 1.4; color: var(--text-dim); }
-  .toast-msg strong { color: var(--text); }
-  .toast-close {
-    background: none; border: none; color: var(--text-muted);
-    cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1;
-    flex-shrink: 0;
-  }
-  .toast-close:hover { color: var(--text); }
-  .toast-actions { display: flex; gap: 6px; justify-content: flex-end; }
-  .update-progress {
-    width: 100%;
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .update-progress-fill {
-    height: 100%;
-    background: var(--accent);
-    transition: width 0.3s ease;
-  }
+  /* update progress bar — used by main-process title bar indicator */
+  .update-progress { display: none; }
+  .update-progress-fill { display: none; }
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -722,17 +667,6 @@
   </div>
 </div>
 
-<!-- UPDATE TOAST -->
-<div id="update-toast">
-  <div class="toast-row">
-    <span class="toast-msg" id="update-toast-msg"></span>
-    <button class="toast-close" onclick="closeUpdateToast()" title="Dismiss">&#10005;</button>
-  </div>
-  <div class="update-progress" id="update-toast-progress" style="display:none;">
-    <div class="update-progress-fill" id="update-toast-fill" style="width:0%"></div>
-  </div>
-  <div class="toast-actions" id="update-toast-actions"></div>
-</div>
 
 <!-- SAVE LAYOUT MODAL -->
 <div class="modal-overlay" id="save-layout-modal">
@@ -1088,13 +1022,13 @@
     grid.on('change',        () => { saveLayout(); syncAllBVBounds(); });
     grid.on('added removed', () => { saveLayout(); syncAllBVBounds(); });
 
-    let resizeTimer;
+    let bvSyncTimer;
     window.addEventListener('resize', () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        if (grid) grid.cellHeight(calculateCellHeight());
-        syncAllBVBounds();
-      }, 150);
+      // Update cell height immediately so panels scale with the window — no debounce
+      if (grid) grid.cellHeight(calculateCellHeight());
+      // BV bounds sync is more expensive; debounce it until resize settles
+      clearTimeout(bvSyncTimer);
+      bvSyncTimer = setTimeout(syncAllBVBounds, 120);
     });
   }
 
@@ -1723,70 +1657,11 @@
     if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
   }
 
-  // ============ UPDATE TOAST ============
-  let _toastDismissTimer = null;
-
-  function closeUpdateToast() {
-    clearTimeout(_toastDismissTimer);
-    const t = document.getElementById('update-toast');
-    t.classList.remove('visible', 'ready');
-  }
-
-  function showUpdateStatus(payload) {
-    clearTimeout(_toastDismissTimer);
-    const toast   = document.getElementById('update-toast');
-    const msg     = document.getElementById('update-toast-msg');
-    const progress= document.getElementById('update-toast-progress');
-    const fill    = document.getElementById('update-toast-fill');
-    const actions = document.getElementById('update-toast-actions');
-
-    progress.style.display = 'none';
-    actions.innerHTML = '';
-    toast.classList.remove('ready');
-
-    switch (payload.state) {
-      case 'checking':
-        msg.innerHTML = 'Checking for updates…';
-        break;
-
-      case 'not-available':
-        msg.innerHTML = `<strong>Up to date</strong> &nbsp;${payload.version || ''}`;
-        toast.classList.add('visible');
-        _toastDismissTimer = setTimeout(closeUpdateToast, 3000);
-        return;
-
-      case 'available':
-        msg.innerHTML = `<strong>v${payload.version}</strong> available — downloading…`;
-        break;
-
-      case 'downloading': {
-        const pct = Math.round(payload.percent || 0);
-        msg.innerHTML = `Downloading update… <strong>${pct}%</strong>`;
-        progress.style.display = 'block';
-        fill.style.width = `${pct}%`;
-        break;
-      }
-
-      case 'ready':
-        msg.innerHTML = `<strong>v${payload.version}</strong> ready to install`;
-        toast.classList.add('ready');
-        actions.innerHTML = `
-          <button onclick="closeUpdateToast()">Later</button>
-          <button class="primary" onclick="window.electronAPI.installUpdate()">Restart &amp; Install</button>`;
-        break;
-
-      case 'error':
-        msg.innerHTML = `<span style="color:var(--danger)">Update check failed</span>`;
-        actions.innerHTML = `<button onclick="window.electronAPI?.checkForUpdates()">Try Again</button>`;
-        _toastDismissTimer = setTimeout(closeUpdateToast, 8000);
-        break;
-    }
-
-    toast.classList.add('visible');
-  }
-
-  // Allow closing the toast via menu "Check for Updates" re-trigger
-  function closeUpdateModal() { closeUpdateToast(); }
+  // Update UI is handled natively in main process (above BrowserViews).
+  // These stubs keep Escape-key handler and any other references intact.
+  function showUpdateStatus() {}
+  function closeUpdateModal() {}
+  function closeUpdateToast() {}
 
   // ============ NATIVE MENU SYNC ============
   function notifyMenuUpdate() {
@@ -1817,13 +1692,7 @@
   loadLockState();
   notifyMenuUpdate();
 
-  if (window.electronAPI) {
-    window.electronAPI.onUpdateStatus(showUpdateStatus);
-    // Sync any update state that arrived before this listener registered
-    window.electronAPI.getUpdateStatus().then(payload => {
-      if (payload) showUpdateStatus(payload);
-    }).catch(() => {});
-  }
+  // Update UI is handled natively in main process — no renderer wiring needed.
 </script>
 
 </body>

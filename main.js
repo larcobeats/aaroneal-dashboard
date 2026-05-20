@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, screen, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -364,54 +364,121 @@ function sendUpdateStatus(payload) {
 }
 
 let _checkInProgress = false;
+let _manualCheck     = false;
 
 function triggerUpdateCheck() {
   if (_checkInProgress) return;
+  _manualCheck = true;
   _checkInProgress = true;
   autoUpdater.autoDownload = true;
   autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' };
-  sendUpdateStatus({ state: 'checking' });
   autoUpdater.checkForUpdates()
-    .catch(err => sendUpdateStatus({ state: 'error', message: err.message }))
-    .finally(() => { _checkInProgress = false; });
+    .catch(err => {
+      _checkInProgress = false;
+      if (_manualCheck) {
+        _manualCheck = false;
+        dialog.showMessageBox(mainWin, {
+          type: 'error', title: 'Update Check Failed',
+          message: 'Could not check for updates.',
+          detail: err.message, buttons: ['OK'],
+        });
+      }
+    });
 }
 
 ipcMain.on('check-for-updates', () => triggerUpdateCheck());
 ipcMain.handle('get-update-status', () => _lastUpdatePayload);
 
-autoUpdater.on('checking-for-update',  ()     => { _checkInProgress = true;  sendUpdateStatus({ state: 'checking' }); });
-autoUpdater.on('update-available',     info   => { _checkInProgress = false; sendUpdateStatus({ state: 'available',     version: info.version }); });
-autoUpdater.on('update-not-available', info   => { _checkInProgress = false; sendUpdateStatus({ state: 'not-available', version: info.version }); });
-autoUpdater.on('download-progress',    prog   =>   sendUpdateStatus({ state: 'downloading',   percent: Math.round(prog.percent) }));
-autoUpdater.on('update-downloaded',    info   => { _checkInProgress = false; sendUpdateStatus({ state: 'ready',         version: info.version }); });
-autoUpdater.on('error',                err    => { _checkInProgress = false; sendUpdateStatus({ state: 'error',         message: err.message }); });
+autoUpdater.on('checking-for-update', () => { _checkInProgress = true; });
+
+autoUpdater.on('update-available', info => {
+  _checkInProgress = false;
+  sendUpdateStatus({ state: 'available', version: info.version });
+  if (mainWin) mainWin.setTitle(`Aaroneal Dashboard — Downloading v${info.version}…`);
+});
+
+autoUpdater.on('download-progress', prog => {
+  const pct = Math.round(prog.percent);
+  sendUpdateStatus({ state: 'downloading', percent: pct });
+  if (mainWin) mainWin.setProgressBar(pct / 100);
+});
+
+autoUpdater.on('update-not-available', info => {
+  _checkInProgress = false;
+  sendUpdateStatus({ state: 'not-available', version: info.version });
+  if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
+  if (_manualCheck) {
+    _manualCheck = false;
+    dialog.showMessageBox(mainWin, {
+      type: 'info', title: 'Up to Date',
+      message: `You're running the latest version (${info.version}).`,
+      buttons: ['OK'],
+    });
+  }
+});
+
+autoUpdater.on('update-downloaded', info => {
+  _checkInProgress = false;
+  _manualCheck     = false;
+  sendUpdateStatus({ state: 'ready', version: info.version });
+  if (mainWin) { mainWin.setTitle('Aaroneal Dashboard'); mainWin.setProgressBar(-1); }
+  dialog.showMessageBox(mainWin, {
+    type: 'info',
+    title: 'Update Ready to Install',
+    message: `Version ${info.version} has been downloaded.`,
+    detail: 'Restart the app now to apply the update, or install it later from Help → Check for Updates.',
+    buttons: ['Restart & Install', 'Later'],
+    defaultId: 0, cancelId: 1,
+  }).then(({ response }) => { if (response === 0) autoUpdater.quitAndInstall(); });
+});
+
+autoUpdater.on('error', err => {
+  _checkInProgress = false;
+  sendUpdateStatus({ state: 'error', message: err.message });
+  if (mainWin) mainWin.setProgressBar(-1);
+  if (_manualCheck) {
+    _manualCheck = false;
+    dialog.showMessageBox(mainWin, {
+      type: 'error', title: 'Update Check Failed',
+      message: 'Could not check for updates.',
+      detail: err.message, buttons: ['OK'],
+    });
+  }
+});
 
 ipcMain.on('install-update', () => autoUpdater.quitAndInstall());
 
 // ─── Window state persistence ─────────────────────────────────────────────────
+// Lazy-init the path so app.getPath() is never called before app.ready.
 
-const WIN_STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
+let _winStateFile = null;
+function winStateFile() {
+  if (!_winStateFile) _winStateFile = path.join(app.getPath('userData'), 'window-state.json');
+  return _winStateFile;
+}
 
 function loadWindowState() {
   try {
-    const saved = JSON.parse(fs.readFileSync(WIN_STATE_FILE, 'utf8'));
-    // Ensure the saved position still falls on a connected display
-    const onScreen = screen.getAllDisplays().some(d => {
-      const b = d.bounds;
-      return saved.x >= b.x && saved.y >= b.y &&
-             saved.x + saved.width  <= b.x + b.width &&
-             saved.y + saved.height <= b.y + b.height;
-    });
-    if (onScreen) return saved;
+    return JSON.parse(fs.readFileSync(winStateFile(), 'utf8'));
   } catch {}
-  return { width: 1440, height: 900 }; // default — electron will center it
+  return { width: 1440, height: 900 };
 }
 
 function saveWindowState(win) {
-  if (!win || win.isMinimized() || win.isMaximized()) return;
-  const [x, y]         = win.getPosition();
-  const [width, height] = win.getSize();
-  try { fs.writeFileSync(WIN_STATE_FILE, JSON.stringify({ x, y, width, height })); } catch {}
+  if (!win) return;
+  const isMaximized = win.isMaximized();
+  try {
+    if (!isMaximized) {
+      const [x, y]         = win.getPosition();
+      const [width, height] = win.getSize();
+      fs.writeFileSync(winStateFile(), JSON.stringify({ x, y, width, height, isMaximized: false }));
+    } else {
+      // Keep the last non-maximized bounds; just flip the flag
+      let prev = {};
+      try { prev = JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch {}
+      fs.writeFileSync(winStateFile(), JSON.stringify({ ...prev, isMaximized: true }));
+    }
+  } catch (e) { console.warn('[winstate] save failed:', e.message); }
 }
 
 // ─── Main window ──────────────────────────────────────────────────────────────
@@ -437,7 +504,10 @@ async function createWindow() {
   const winState = loadWindowState();
 
   mainWin = new BrowserWindow({
-    ...winState,
+    x:      winState.isMaximized ? undefined : winState.x,
+    y:      winState.isMaximized ? undefined : winState.y,
+    width:  winState.width  || 1440,
+    height: winState.height || 900,
     minWidth: 800,
     minHeight: 600,
     backgroundColor: '#0c0c0f',
@@ -452,15 +522,18 @@ async function createWindow() {
     },
   });
 
+  if (winState.isMaximized) mainWin.maximize();
+
   // Persist window position/size across restarts
   let _winSaveTimer;
   const debouncedSave = () => {
     clearTimeout(_winSaveTimer);
     _winSaveTimer = setTimeout(() => saveWindowState(mainWin), 500);
   };
-  mainWin.on('resize', debouncedSave);
-  mainWin.on('move',   debouncedSave);
-  mainWin.on('close',  () => saveWindowState(mainWin));
+  mainWin.on('resize',   debouncedSave);
+  mainWin.on('move',     debouncedSave);
+  mainWin.on('maximize', debouncedSave);
+  mainWin.on('close',    () => saveWindowState(mainWin));
 
   buildMenu();
   applyWindowOpenHandler(mainWin.webContents);
