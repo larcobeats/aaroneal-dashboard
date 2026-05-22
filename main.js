@@ -1,5 +1,6 @@
 const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, Notification, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -42,9 +43,8 @@ function startLocalServer() {
 
 // ─── 7TV extension finder ─────────────────────────────────────────────────────
 
-// Detect any 7TV extension by reading manifest content rather than matching a
-// hardcoded ID list — works for Stable, Nightly, Recommended, and any future
-// release channels without needing code changes.
+// Detect any 7TV extension by reading manifest content — works for Stable,
+// Nightly, Recommended, and any future release channels.
 function is7TVManifest(manifestPath) {
   try {
     const raw = fs.readFileSync(manifestPath, 'utf8');
@@ -52,11 +52,40 @@ function is7TVManifest(manifestPath) {
   } catch { return false; }
 }
 
+// Firefox stores AMO extensions as .xpi files (ZIP archives).
+// Electron's loadExtension() needs an unpacked directory, so we extract to
+// userData/7tv-extracted and cache by source path to avoid re-extracting.
+function extractXpi(xpiPath) {
+  const destDir = path.join(app.getPath('userData'), '7tv-extracted');
+  const stamp   = path.join(destDir, '.source');
+  try {
+    if (fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8').trim() === xpiPath) {
+      return destDir; // already extracted from this exact file
+    }
+  } catch {}
+  try {
+    if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
+    fs.mkdirSync(destDir, { recursive: true });
+    // PowerShell's Expand-Archive is built into Windows 10+ — no extra deps needed
+    execSync(
+      `powershell -NoProfile -NonInteractive -Command "Expand-Archive -LiteralPath '${xpiPath}' -DestinationPath '${destDir}' -Force"`,
+      { timeout: 15000, stdio: 'pipe' }
+    );
+    fs.writeFileSync(stamp, xpiPath);
+    console.log('[7TV] Extracted Firefox .xpi to:', destDir);
+    return destDir;
+  } catch (e) {
+    console.warn('[7TV] Failed to extract .xpi:', e.message);
+    return null;
+  }
+}
+
 function find7TVExtension() {
   const local   = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   const roaming = process.env.APPDATA      || path.join(os.homedir(), 'AppData', 'Roaming');
 
-  const browserBases = [
+  // ── Chrome-family browsers (unpacked extension directories) ──────────────
+  const chromeBases = [
     path.join(local,  'Microsoft', 'Edge', 'User Data'),
     path.join(local,  'Google', 'Chrome', 'User Data'),
     path.join(local,  'Google', 'Chrome Beta', 'User Data'),
@@ -65,7 +94,7 @@ function find7TVExtension() {
     path.join(roaming,'Opera Software', 'Opera Stable'),
   ];
 
-  for (const base of browserBases) {
+  for (const base of chromeBases) {
     if (!fs.existsSync(base)) continue;
     const profiles = ['Default'];
     try {
@@ -85,13 +114,40 @@ function find7TVExtension() {
             .sort();
           if (versions.length === 0) continue;
           const latest = path.join(idPath, versions[versions.length - 1]);
-          if (is7TVManifest(path.join(latest, 'manifest.json'))) {
-            return latest;
+          if (is7TVManifest(path.join(latest, 'manifest.json'))) return latest;
+        } catch {}
+      }
+    }
+  }
+
+  // ── Firefox (extensions stored as .xpi ZIP archives) ─────────────────────
+  const ffProfilesRoot = path.join(roaming, 'Mozilla', 'Firefox', 'Profiles');
+  if (fs.existsSync(ffProfilesRoot)) {
+    let ffProfiles;
+    try { ffProfiles = fs.readdirSync(ffProfilesRoot); } catch { ffProfiles = []; }
+
+    for (const profile of ffProfiles) {
+      const extDir = path.join(ffProfilesRoot, profile, 'extensions');
+      let files;
+      try { files = fs.readdirSync(extDir); } catch { continue; }
+
+      for (const file of files) {
+        const fullPath = path.join(extDir, file);
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            // Developer-mode / temporarily-installed extension
+            if (is7TVManifest(path.join(fullPath, 'manifest.json'))) return fullPath;
+          } else if (file.endsWith('.xpi') && /7tv|seventv/i.test(file)) {
+            // Signed AMO extension — extract and return unpacked path
+            const extracted = extractXpi(fullPath);
+            if (extracted) return extracted;
           }
         } catch {}
       }
     }
   }
+
   return null;
 }
 
