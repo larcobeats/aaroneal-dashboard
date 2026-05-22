@@ -103,10 +103,16 @@ function find7TVExtension() {
 
     for (const profile of profiles) {
       const extRoot = path.join(base, profile, 'Extensions');
-      let extIds;
-      try { extIds = fs.readdirSync(extRoot); } catch { continue; }
+      let extEntries;
+      try {
+        // Sort newest-first so the most recently installed 7TV release wins
+        extEntries = fs.readdirSync(extRoot)
+          .map(id => { try { return { id, mtime: fs.statSync(path.join(extRoot, id)).mtimeMs }; } catch { return null; } })
+          .filter(Boolean)
+          .sort((a, b) => b.mtime - a.mtime);
+      } catch { continue; }
 
-      for (const id of extIds) {
+      for (const { id } of extEntries) {
         const idPath = path.join(extRoot, id);
         try {
           const versions = fs.readdirSync(idPath)
