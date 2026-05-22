@@ -1293,8 +1293,14 @@
     if (!body) return null;
     const r = body.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return null;
-    return { x: Math.round(r.left), y: Math.round(r.top),
-             w: Math.round(r.width), h: Math.round(r.height) };
+    const x = Math.round(r.left);
+    const y = Math.round(r.top);
+    // Snap to window edges when within 2px — prevents sub-pixel floating-point
+    // gaps (e.g. 126-row grid with non-integer cell height) from clipping BV content.
+    const SNAP = 2;
+    const w = (r.right  >= window.innerWidth  - SNAP) ? window.innerWidth  - x : Math.round(r.width);
+    const h = (r.bottom >= window.innerHeight - SNAP) ? window.innerHeight - y : Math.round(r.height);
+    return { x, y, w, h };
   }
 
   function isBVPanel(cfg) { return cfg.type === 'webview' || cfg.type === 'stream'; }
