@@ -42,10 +42,15 @@ function startLocalServer() {
 
 // ─── 7TV extension finder ─────────────────────────────────────────────────────
 
-const EXT_7TV_IDS = [
-  'fphegifdehlodcepfkgofelcenelpedj', // 7TV Nightly
-  'imenocelblhgehldidaghmgnchchnmoh', // 7TV Stable
-];
+// Detect any 7TV extension by reading manifest content rather than matching a
+// hardcoded ID list — works for Stable, Nightly, Recommended, and any future
+// release channels without needing code changes.
+function is7TVManifest(manifestPath) {
+  try {
+    const raw = fs.readFileSync(manifestPath, 'utf8');
+    return /7tv|seventv/i.test(raw);
+  } catch { return false; }
+}
 
 function find7TVExtension() {
   const local   = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
@@ -68,14 +73,21 @@ function find7TVExtension() {
     } catch {}
 
     for (const profile of profiles) {
-      for (const id of EXT_7TV_IDS) {
-        const extBase = path.join(base, profile, 'Extensions', id);
-        if (!fs.existsSync(extBase)) continue;
+      const extRoot = path.join(base, profile, 'Extensions');
+      let extIds;
+      try { extIds = fs.readdirSync(extRoot); } catch { continue; }
+
+      for (const id of extIds) {
+        const idPath = path.join(extRoot, id);
         try {
-          const versions = fs.readdirSync(extBase)
-            .filter(v => fs.statSync(path.join(extBase, v)).isDirectory())
+          const versions = fs.readdirSync(idPath)
+            .filter(v => fs.statSync(path.join(idPath, v)).isDirectory())
             .sort();
-          if (versions.length > 0) return path.join(extBase, versions[versions.length - 1]);
+          if (versions.length === 0) continue;
+          const latest = path.join(idPath, versions[versions.length - 1]);
+          if (is7TVManifest(path.join(latest, 'manifest.json'))) {
+            return latest;
+          }
         } catch {}
       }
     }
