@@ -208,13 +208,29 @@
     transition: border-color 0.2s ease, border-radius 0.2s ease;
   }
 
-  /* Locked: borderless seamless tiles */
+  /* Locked: borderless edge-to-edge tiles, headers collapsed until hovered.
+     border-width goes to 0 (not just transparent) so panel content sits
+     perfectly flush against its neighbours with zero wasted pixels. */
   body.locked .grid-stack-item-content {
+    border-width: 0;
     border-color: transparent;
     border-radius: 0;
   }
   body.locked .panel-header {
-    border-bottom-color: transparent;
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+    border-bottom: 0;
+    pointer-events: none;
+  }
+  /* Hover reveal — driven by cursor tracking in main.js (mouse events over
+     BrowserViews never reach this document). The panel body shrinks while the
+     header slides in; BV bounds are re-synced every frame of the transition. */
+  body.locked .grid-stack-item.reveal-header .panel-header {
+    height: var(--header-h);
+    opacity: 1;
+    pointer-events: auto;
+    border-bottom: 1px solid var(--border-sub);
   }
 
   .grid-stack-item-content,
@@ -289,7 +305,8 @@
     flex-shrink: 0;
     cursor: move;
     user-select: none;
-    transition: background 0.1s ease, color 0.1s ease;
+    transition: background 0.1s ease, color 0.1s ease,
+                height 0.18s ease, opacity 0.14s ease;
   }
 
   body:not(.locked) .panel-header:hover {
@@ -1605,6 +1622,55 @@
     document.querySelectorAll('img.bv-freeze').forEach(el => el.remove());
   }
 
+  // Re-sync BV bounds every frame for the duration of a CSS transition, so
+  // native views scale smoothly along with their animating panel bodies.
+  let _bvAnimUntil = 0;
+  let _bvAnimRunning = false;
+  function animateBVSync(ms) {
+    _bvAnimUntil = performance.now() + ms;
+    if (_bvAnimRunning) return;
+    _bvAnimRunning = true;
+    const step = () => {
+      if (_bvHideCount === 0) syncAllBVBounds();
+      if (performance.now() < _bvAnimUntil) requestAnimationFrame(step);
+      else _bvAnimRunning = false;
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ── Locked-mode header reveal ────────────────────────────────────────────────
+  // While locked, headers are collapsed; hovering the top edge of a panel
+  // slides its header in. Cursor positions arrive from main (see hover-watch)
+  // because mouse events over BrowserViews never reach this document.
+  const REVEAL_BAND = 28; // px from a panel's top edge that reveals its header
+
+  let _revealedEl = null;
+  function setRevealedPanel(el) {
+    if (el === _revealedEl) return;
+    _revealedEl?.classList.remove('reveal-header');
+    _revealedEl = el;
+    el?.classList.add('reveal-header');
+    animateBVSync(260); // follow the 180ms height transition with margin
+  }
+
+  function handleCursorPos({ x, y, inside }) {
+    if (!isLocked || document.body.classList.contains('modal-open')) {
+      setRevealedPanel(null);
+      return;
+    }
+    let target = null;
+    if (inside) {
+      for (const item of document.querySelectorAll('.grid-stack-item')) {
+        const r = item.getBoundingClientRect();
+        if (x >= r.left && x < r.right && y >= r.top && y < r.top + REVEAL_BAND) {
+          target = item;
+          break;
+        }
+      }
+    }
+    setRevealedPanel(target);
+  }
+
   function getBVBounds(id) {
     const body = document.querySelector(`#content-${id} .panel-body`);
     if (!body) return null;
@@ -1955,6 +2021,11 @@
       grid.update(node.el, { noMove: isLocked, noResize: isLocked, locked: isLocked });
     });
     localStorage.setItem('dashboard-locked', JSON.stringify(isLocked));
+    // Headers collapse (locked) or return (unlocked) — track the 180ms height
+    // transition so BV content scales smoothly into the reclaimed space.
+    if (!isLocked) setRevealedPanel(null);
+    window.electronAPI?.hoverWatch(isLocked);
+    animateBVSync(300);
   }
 
   function toggleLock() {
@@ -2385,6 +2456,7 @@
       _lastStats = stats;
       if (!_statsDragLabel) renderStats(); // don't rebuild tiles mid-drag
     });
+    window.electronAPI.onCursorPos(handleCursorPos);
   }
 
   // First run on a fresh PC: collect the channel before anything can load

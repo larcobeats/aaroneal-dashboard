@@ -402,36 +402,69 @@ ipcMain.handle('bv-freeze', async () => {
 // Twitch/StreamElements pages inside panels ship the stock bulky scrollbars.
 // The renderer's CSS can't reach into cross-origin frames, so inject a slim
 // scrollbar style into every frame of every webContents from here.
+//
+// Uses the standard scrollbar-width/scrollbar-color properties (Chromium 121+)
+// with !important — when set, they take precedence over any ::-webkit-scrollbar
+// styling the page itself ships, so this can't be beaten by site CSS. Injection
+// runs from three hooks (frame dom-ready, frame finish-load, and a full-tree
+// sweep on top-level finish-load) because cross-origin iframes don't reliably
+// surface through any single one.
 
 const SCROLLBAR_INJECT_JS = `(() => {
   if (document.getElementById('__aaroneal_scrollbars')) return;
   const s = document.createElement('style');
   s.id = '__aaroneal_scrollbars';
-  s.textContent = \`
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-corner { background: transparent; }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.16);
-      border-radius: 10px;
-      border: 3px solid transparent;
-      background-clip: content-box;
-    }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); border: 3px solid transparent; background-clip: content-box; }
-  \`;
+  s.textContent = '* { scrollbar-width: thin !important; scrollbar-color: rgba(255,255,255,0.25) transparent !important; }';
   (document.head || document.documentElement).appendChild(s);
 })()`;
 
+function injectSlimScrollbars(frame, wc) {
+  if (!frame) return;
+  // The dashboard's own document already styles its scrollbars
+  if (wc === mainWin?.webContents && frame === wc.mainFrame) return;
+  try { frame.executeJavaScript(SCROLLBAR_INJECT_JS).catch(() => {}); } catch {}
+}
+
 function injectScrollbarStyles(wc) {
-  wc.on('did-frame-finish-load', (_e, isMainFrame, processId, routingId) => {
-    // The dashboard's own document already styles its scrollbars
-    if (wc === mainWin?.webContents && isMainFrame) return;
-    try {
-      const frame = webFrameMain.fromId(processId, routingId);
-      frame?.executeJavaScript(SCROLLBAR_INJECT_JS).catch(() => {});
-    } catch {}
+  wc.on('frame-created', (_e, { frame }) => {
+    if (!frame) return;
+    try { frame.once('dom-ready', () => injectSlimScrollbars(frame, wc)); } catch {}
+  });
+  wc.on('did-frame-finish-load', (_e, _isMainFrame, processId, routingId) => {
+    try { injectSlimScrollbars(webFrameMain.fromId(processId, routingId), wc); } catch {}
+  });
+  wc.on('did-finish-load', () => {
+    try { wc.mainFrame.framesInTree.forEach(f => injectSlimScrollbars(f, wc)); } catch {}
   });
 }
+
+// ─── Locked-mode hover watch ─────────────────────────────────────────────────
+// While locked, panel headers are hidden and revealed by hovering a panel's
+// top edge. Mouse events over BrowserViews go to the BV's own renderer and
+// never reach the dashboard DOM, so the renderer can't see the hover itself.
+// Instead, main polls the OS cursor position while the watch is active and
+// streams window-relative coordinates; the renderer does the hit-testing.
+
+let _hoverTimer = null;
+
+ipcMain.on('hover-watch', (_e, active) => {
+  clearInterval(_hoverTimer);
+  _hoverTimer = null;
+  if (!active) return;
+  _hoverTimer = setInterval(() => {
+    if (!mainWin || mainWin.isMinimized() || !mainWin.isVisible()) return;
+    try {
+      const pt = screen.getCursorScreenPoint();
+      const cb = mainWin.getContentBounds();
+      mainWin.webContents.send('cursor-pos', {
+        x: pt.x - cb.x,
+        y: pt.y - cb.y,
+        inside: pt.x >= cb.x && pt.y >= cb.y &&
+                pt.x < cb.x + cb.width && pt.y < cb.y + cb.height,
+      });
+    } catch {}
+  }, 120);
+});
 
 // ─── Twitch dashboard stats scraper ──────────────────────────────────────────
 // The stats strip on dashboard.twitch.tv (Session / Viewers / Followers /
@@ -825,6 +858,7 @@ app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   // Destroy all BrowserViews before quitting
+  clearInterval(_hoverTimer);
   stopStats();
   for (const id of [...bvMap.keys()]) destroyBV(id);
   if (localServer) localServer.close();

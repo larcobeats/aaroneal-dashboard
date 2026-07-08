@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // panels can show a freeze-frame while menus/modals are open above them.
   bvFreeze:      ()        => ipcRenderer.invoke('bv-freeze'),
 
+  // ── Locked-mode hover watch ─────────────────────────────────────────────────
+  // While active, main polls the OS cursor (mouse events over BrowserViews
+  // never reach this document) and streams window-relative { x, y, inside }.
+  hoverWatch:  (active) => ipcRenderer.send('hover-watch', active),
+  onCursorPos: (cb)     => ipcRenderer.on('cursor-pos', (_e, pos) => cb(pos)),
+
   // ── Twitch dashboard stats bar ──────────────────────────────────────────────
   // Main process scrapes the stats strip from a hidden Stream Manager view and
   // pushes [{ label, value }, …] every few seconds while started.
