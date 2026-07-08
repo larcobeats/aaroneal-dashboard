@@ -6,6 +6,20 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 
+// ─── Single instance ──────────────────────────────────────────────────────────
+// A second launch would fail to bind port 3847 and open a broken window;
+// focus the existing window instead.
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWin) return;
+    if (mainWin.isMinimized()) mainWin.restore();
+    mainWin.focus();
+  });
+}
+
 // ─── Local HTTP server ────────────────────────────────────────────────────────
 
 const PORT = 3847;
@@ -13,11 +27,18 @@ let localServer = null;
 
 function startLocalServer() {
   return new Promise((resolve, reject) => {
+    const rendererRoot = path.join(__dirname, 'renderer');
     localServer = http.createServer((req, res) => {
       const urlPath = req.url.split('?')[0];
-      const filePath = path.join(
-        __dirname, 'renderer', urlPath === '/' ? 'index.html' : urlPath
-      );
+      const filePath = path.normalize(path.join(
+        rendererRoot, urlPath === '/' ? 'index.html' : urlPath
+      ));
+      // Never serve anything outside renderer/ (e.g. /../main.js)
+      if (filePath !== rendererRoot && !filePath.startsWith(rendererRoot + path.sep)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+      }
       try {
         const data = fs.readFileSync(filePath);
         const ext = path.extname(filePath).toLowerCase();
@@ -250,8 +271,44 @@ function applyWindowOpenHandler(wc) {
 //   • any modal dialog — so modals aren't obscured by the OS-level overlay
 // They are restored with up-to-date bounds immediately after.
 
-const bvMap = new Map(); // panelId → { view: BrowserView, bounds: {x,y,w,h} }
+const bvMap = new Map(); // panelId → { view, bounds: {x,y,w,h}, homeUrl }
 let _bvsVisible = true;  // false while any modal or drag/resize is active
+
+// ─── Raid guard ──────────────────────────────────────────────────────────────
+// When a raid executes ("Raid Now" or the countdown expiring), Twitch redirects
+// the popout chat page itself to the raid target. That redirect is an in-page
+// (SPA) navigation, so the will-navigate handler below never fires. Watch the
+// chat BV's navigation events instead: any main-frame navigation away from the
+// chat popout path opens the target channel in the system browser and restores
+// the original chat.
+
+function isTwitchPopoutChat(url) {
+  try {
+    const u = new URL(url);
+    return /(^|\.)twitch\.tv$/.test(u.hostname) && /^\/popout\/[^/]+\/chat/.test(u.pathname);
+  } catch { return false; }
+}
+
+function attachRaidGuard(id, view) {
+  const wc = view.webContents;
+  const onNav = (url) => {
+    const entry = bvMap.get(id);
+    if (!entry || entry.view !== view) return;      // stale view — panel was replaced
+    const home = entry.homeUrl;
+    if (!isTwitchPopoutChat(home)) return;          // guard only applies to chat panels
+    let u, h;
+    try { u = new URL(url); h = new URL(home); } catch { return; }
+    if (u.pathname.startsWith(h.pathname)) return;  // still on our chat
+    if (isTrustedAuthDomain(url))          return;  // login flow — leave it alone
+    if (/^\/(login|signup)/.test(u.pathname)) return;
+    // Raid executed — hand the target channel to the default browser
+    const m = u.pathname.match(/^\/popout\/([^/]+)/);
+    shell.openExternal(m ? `https://www.twitch.tv/${m[1]}` : url);
+    wc.loadURL(home);
+  };
+  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) onNav(url); });
+  wc.on('did-navigate',         (_e, url) => onNav(url));
+}
 
 function normBounds(b) {
   return {
@@ -275,7 +332,8 @@ function createBV(id, url, bounds) {
   view.setBounds(normBounds(bounds));
   if (_bvsVisible) mainWin?.addBrowserView(view);
   view.webContents.loadURL(url);
-  bvMap.set(id, { view, bounds: { ...bounds } });
+  bvMap.set(id, { view, bounds: { ...bounds }, homeUrl: url });
+  attachRaidGuard(id, view);
 }
 
 function destroyBV(id) {
@@ -314,11 +372,90 @@ function showAllBVs() {
 ipcMain.on('bv-create',         (_e, { id, url, bounds }) => createBV(id, url, bounds));
 ipcMain.on('bv-destroy',        (_e, { id }) => destroyBV(id));
 ipcMain.on('bv-destroy-all',    ()  => { for (const id of [...bvMap.keys()]) destroyBV(id); });
-ipcMain.on('bv-navigate',       (_e, { id, url }) => { const e = bvMap.get(id); if (e) e.view.webContents.loadURL(url); });
+ipcMain.on('bv-navigate',       (_e, { id, url }) => { const e = bvMap.get(id); if (e) { e.homeUrl = url; e.view.webContents.loadURL(url); } });
 ipcMain.on('bv-reload',         (_e, { id }) => { const e = bvMap.get(id); if (e) e.view.webContents.reload(); });
 ipcMain.on('bv-set-bounds',     (_e, { id, bounds }) => setBVBounds(id, bounds));
 ipcMain.on('bv-set-all-bounds', (_e, updates) => updates.forEach(({ id, bounds }) => setBVBounds(id, bounds)));
 ipcMain.on('bv-set-visible',    (_e, visible) => visible ? showAllBVs() : hideAllBVs());
+
+// ─── Twitch dashboard stats scraper ──────────────────────────────────────────
+// The stats strip on dashboard.twitch.tv (Session / Viewers / Followers /
+// Bitrate / Subscribers / Sub Points / Pre-roll) has no popout URL, and the
+// Helix API can't supply bitrate at all (nor subscriber counts without a
+// registered OAuth app). So a hidden BrowserView — never attached to the
+// window — loads the Stream Manager with the user's existing login session
+// and reads the strip's values off the DOM every few seconds.
+//
+// The scrape matches on visible label text only (no CSS classes), so it
+// survives Twitch styling changes. The view is destroyed whenever the stats
+// bar is hidden, so it costs nothing unless the feature is in use.
+
+let statsView  = null;
+let statsTimer = null;
+
+const STATS_SCRAPE_JS = `(() => {
+  const LABELS = ['Session','Viewers','Followers','Bitrate','Horizontal','Vertical',
+                  'Subscribers','Sub Points','Pre-roll On','Pre-roll Off'];
+  const out = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll('div,span,p,strong')) {
+    if (el.children.length > 0) continue;
+    const label = (el.textContent || '').trim();
+    if (!LABELS.includes(label) || seen.has(label)) continue;
+    // Walk up to the stat tile: the nearest ancestor whose text is the label
+    // plus a short value and nothing else.
+    let node = el.parentElement;
+    for (let i = 0; i < 3 && node; i++, node = node.parentElement) {
+      const t = (node.textContent || '').trim();
+      if (t.length > label.length && t.length <= label.length + 24) {
+        const value = t.replace(label, '').trim();
+        if (value) { seen.add(label); out.push({ label, value }); }
+        break;
+      }
+    }
+  }
+  return out;
+})()`;
+
+function stopStats() {
+  clearInterval(statsTimer);
+  statsTimer = null;
+  if (statsView) {
+    try { statsView.webContents.close(); } catch {}
+    statsView = null;
+  }
+}
+
+function startStats(channel) {
+  stopStats();
+  statsView = new BrowserView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      partition: 'persist:main', // reuse the existing Twitch login
+      sandbox: false,
+    },
+  });
+  const wc = statsView.webContents;
+  wc.setAudioMuted(true);
+  wc.setBackgroundThrottling(false); // keep live values updating while hidden
+  wc.loadURL(`https://dashboard.twitch.tv/u/${encodeURIComponent(channel)}/stream-manager`);
+
+  const scrape = () => {
+    statsView?.webContents.executeJavaScript(STATS_SCRAPE_JS)
+      .then(stats => {
+        if (Array.isArray(stats)) mainWin?.webContents.send('stats-data', stats);
+      })
+      .catch(() => {});
+  };
+  wc.once('did-finish-load', () => setTimeout(scrape, 4000)); // let the SPA render
+  statsTimer = setInterval(scrape, 5000);
+}
+
+ipcMain.on('stats-start', (_e, channel) => {
+  if (typeof channel === 'string' && /^[a-zA-Z0-9_]{1,32}$/.test(channel)) startStats(channel);
+});
+ipcMain.on('stats-stop', () => stopStats());
 
 // ─── Native menu ─────────────────────────────────────────────────────────────
 
@@ -366,6 +503,7 @@ function buildMenu() {
         { label: 'Add Panel…',           accelerator: 'CmdOrCtrl+N',  click: js('addPanelDialog()') },
         { label: 'Reopen Closed Panel',  submenu: closedSubmenu },
         { type: 'separator' },
+        { label: 'Channel Setup…',       click: js('openSetup()') },
         { label: 'Settings…',            accelerator: 'CmdOrCtrl+,',  click: js('openSettings()') },
         { type: 'separator' },
         { label: 'Quit',                 accelerator: 'Alt+F4',        click: () => app.quit() },
@@ -384,6 +522,7 @@ function buildMenu() {
         { label: 'Reload All Panels',      accelerator: 'CmdOrCtrl+Shift+R', click: js('reloadAll()') },
         { type: 'separator' },
         { label: 'Toggle Lock',            accelerator: 'CmdOrCtrl+L',       click: js('toggleLock()') },
+        { label: 'Toggle Stats Bar',       accelerator: 'CmdOrCtrl+B',       click: js('toggleStatsBar()') },
         { type: 'separator' },
         { label: 'Toggle Developer Tools', accelerator: 'CmdOrCtrl+Shift+I',
           click: () => win.webContents.toggleDevTools() },
@@ -630,6 +769,7 @@ app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   // Destroy all BrowserViews before quitting
+  stopStats();
   for (const id of [...bvMap.keys()]) destroyBV(id);
   if (localServer) localServer.close();
   app.quit();

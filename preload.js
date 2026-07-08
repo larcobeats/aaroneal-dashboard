@@ -25,4 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // visible=false → hide all BVs (during drag, resize, or modal open)
   // visible=true  → restore all BVs with their latest bounds
   bvSetVisible:  (visible) => ipcRenderer.send('bv-set-visible',    visible),
+
+  // ── Twitch dashboard stats bar ──────────────────────────────────────────────
+  // Main process scrapes the stats strip from a hidden Stream Manager view and
+  // pushes [{ label, value }, …] every few seconds while started.
+  statsStart:  (channel) => ipcRenderer.send('stats-start', channel),
+  statsStop:   ()        => ipcRenderer.send('stats-stop'),
+  onStatsData: (cb)      => ipcRenderer.on('stats-data', (_e, stats) => cb(stats)),
 });

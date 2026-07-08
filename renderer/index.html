@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aaroneal Stream Dashboard</title>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
+<link rel="stylesheet" href="vendor/gridstack.min.css">
 
 <style>
   :root {
@@ -40,9 +40,135 @@
     font-size: 12px;
   }
 
+  /* Stats bar sits above the grid; the grid takes whatever height remains */
+  body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ===== STATS BAR ===== */
+  #stats-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    height: 42px;
+    overflow: hidden;
+    user-select: none;
+  }
+  #stats-bar.hidden { display: none; }
+
+  #stats-items {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .stat {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 16px;
+    border-right: 1px solid var(--border-sub);
+    white-space: nowrap;
+  }
+  .stat-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+  .stat-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    line-height: 1.2;
+  }
+  .stat .stat-x {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 9px;
+    line-height: 1;
+    padding: 2px 3px;
+    cursor: pointer;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  .stat:hover .stat-x { opacity: 1; }
+  .stat .stat-x:hover { color: var(--danger); background: var(--danger-dim); }
+
+  #stats-placeholder {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .stats-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px;
+    flex-shrink: 0;
+  }
+  .stats-actions button {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 7px;
+    border-radius: 4px;
+    font-family: inherit;
+    line-height: 1;
+    transition: color 0.1s ease, background 0.1s ease;
+  }
+  .stats-actions button:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  #stats-menu {
+    position: fixed;
+    top: 44px;
+    right: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 0;
+    min-width: 180px;
+    z-index: 9998;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  }
+  #stats-menu.hidden { display: none; }
+  #stats-menu .stats-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  #stats-menu .stats-menu-item:hover { background: var(--panel-hover); color: var(--text); }
+  #stats-menu .stats-menu-item input { accent-color: var(--accent); cursor: pointer; }
+
   /* ===== GRID ===== */
   .grid-wrapper {
-    height: 100vh;
+    flex: 1 1 0;
+    min-height: 0;
     width: 100vw;
     overflow: hidden;
     background: var(--bg);
@@ -607,6 +733,18 @@
 </head>
 <body>
 
+<!-- STATS BAR -->
+<div id="stats-bar" class="hidden">
+  <div id="stats-items">
+    <div id="stats-placeholder">Loading stream stats&hellip;</div>
+  </div>
+  <div class="stats-actions">
+    <button id="stats-gear" title="Choose visible stats" onclick="toggleStatsMenu(event)">&#9881;</button>
+    <button id="stats-close" title="Hide stats bar (Ctrl+B)" onclick="toggleStatsBar()">&#10005;</button>
+  </div>
+</div>
+<div id="stats-menu" class="hidden"></div>
+
 <!-- GRID -->
 <div class="grid-wrapper" id="grid-wrapper">
   <div class="grid-stack" id="grid"></div>
@@ -788,6 +926,41 @@
   </div>
 </div>
 
+<!-- CHANNEL SETUP MODAL -->
+<div class="modal-overlay" id="setup-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Channel Setup</span>
+      <button class="modal-close-btn" onclick="closeSetup()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="section-title">Twitch</div>
+      <label>Twitch Channel Name (required)</label>
+      <input type="text" id="setup-channel" placeholder="e.g. aaroneal"
+             onkeydown="if(event.key==='Enter') saveSetup()">
+
+      <hr>
+      <div class="section-title">Optional Integrations</div>
+
+      <label>StreamElements Activity Feed Popout URL</label>
+      <input type="text" id="setup-se-activity" placeholder="https://streamelements.com/dashboard/…/activity/popout">
+
+      <label>StreamElements Sub Goal Overlay URL</label>
+      <input type="text" id="setup-se-overlay" placeholder="https://streamelements.com/overlay/…">
+
+      <label>TikFinity Channel ID (cid)</label>
+      <input type="text" id="setup-tikfinity" placeholder="e.g. 30451">
+
+      <label>Quick Actions UUID (advanced — leave blank if unsure)</label>
+      <input type="text" id="setup-qa-uuid" placeholder="from your dashboard's quick-actions popout URL">
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeSetup()">Cancel</button>
+      <button class="primary" onclick="saveSetup()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- GENERIC CONFIRM MODAL -->
 <div class="modal-overlay" id="confirm-modal">
   <div class="modal" style="width:400px;">
@@ -802,63 +975,125 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+<script src="vendor/gridstack-all.js"></script>
 
 <script>
   // ============ CONFIG ============
-  const CHANNEL = 'aaroneal';
-
-  const PRESETS = {
-    'quick-actions': {
-      title: 'Quick Actions',
-      url: `https://dashboard.twitch.tv/popout/u/${CHANNEL}/stream-manager/quick-actions?uuid=f878d6215f2ff9c30de41b3cbdf4f7f6`,
-      w: 4, h: 6
-    },
-    'activity-feed': {
-      title: 'Activity Feed',
-      url: `https://streamelements.com/dashboard/6214670f53678f6f0d07d53d/activity/popout`,
-      w: 4, h: 6,
-      type: 'webview'  // must be webview — iframe blocks SE auth cookies (third-party SameSite policy)
-    },
-    'chat': {
-      title: 'Chat',
-      url: `https://www.twitch.tv/popout/${CHANNEL}/chat?popout=`,
-      w: 4, h: 12,
-      type: 'webview'  // rendered as BrowserView so 7TV extension can inject
-    },
-    'stream': {
-      title: 'Live Preview',
-      url: `https://player.twitch.tv/?channel=${CHANNEL}&parent=localhost&muted=true&autoplay=true&quality=chunked`,
-      w: 8, h: 6,
-      type: 'webview', // BrowserView — own renderer process, immune to main-window focus/blur
-      stream: true     // signals buildPanelHTML to include the mute toggle button
-    },
-    'tikfinity-chat': {
-      title: 'TikTok Chat',
-      url: `https://tikfinity.zerody.one/widget/activity-feed?cid=30451&did=1`,
-      w: 4, h: 6
-    },
-    'tikfinity-views': {
-      title: 'TikTok Views',
-      url: `https://tikfinity.zerody.one/widget/viewercount?cid=30451`,
-      w: 2, h: 2
-    },
-    'predictions': {
-      title: 'Predictions',
-      url: `https://www.twitch.tv/popout/${CHANNEL}/predictions/summary`,
-      w: 4, h: 6
-    },
-    'sub-goal': {
-      title: 'Sub Goal',
-      url: `https://streamelements.com/overlay/655ea9ee118dc33c8fadd6d2/editor?er=1`,
-      w: 4, h: 3
-    },
-    'stream-manager': {
-      title: 'Stream Manager',
-      url: `https://dashboard.twitch.tv/u/${CHANNEL}/stream-manager`,
-      w: 6, h: 9
-    }
+  // Nothing user-specific is hardcoded — channel and integration IDs live in
+  // localStorage ('dashboard-config'), collected by the Channel Setup modal on
+  // first run and editable via File → Channel Setup.
+  const DEFAULT_CONFIG = {
+    channel: '',          // Twitch channel name
+    quickActionsUuid: '', // optional ?uuid= on the quick-actions popout
+    seActivityUrl: '',    // StreamElements activity feed popout URL
+    seOverlayUrl: '',     // StreamElements sub-goal overlay URL
+    tikfinityCid: '',     // TikFinity channel id
   };
+  let appConfig = { ...DEFAULT_CONFIG };
+
+  function loadConfig() {
+    const saved = localStorage.getItem('dashboard-config');
+    if (saved) {
+      try { appConfig = { ...DEFAULT_CONFIG, ...JSON.parse(saved) }; return; } catch {}
+    }
+    migrateConfigFromLayout(); // upgrade path for installs that predate config
+  }
+
+  function saveConfig() {
+    localStorage.setItem('dashboard-config', JSON.stringify(appConfig));
+  }
+
+  // Pre-config installs have the user's URLs baked into the saved layout —
+  // recover channel/IDs from them so the setup modal never bothers existing users.
+  function migrateConfigFromLayout() {
+    const sources = [];
+    try { sources.push(...(JSON.parse(localStorage.getItem('dashboard-layout') || '[]'))); } catch {}
+    try {
+      for (const l of JSON.parse(localStorage.getItem('dashboard-saved-layouts') || '[]')) {
+        sources.push(...(l.panels || []));
+      }
+    } catch {}
+    try { sources.push(...(JSON.parse(localStorage.getItem('dashboard-closed') || '[]')).map(c => ({ config: c }))); } catch {}
+
+    for (const n of sources) {
+      const url = (n && n.config && n.config.url) || '';
+      let m;
+      if (!appConfig.channel) {
+        if ((m = url.match(/twitch\.tv\/popout\/([^/]+)\/chat/)))            appConfig.channel = m[1];
+        else if ((m = url.match(/dashboard\.twitch\.tv\/(?:popout\/)?u\/([^/]+)/))) appConfig.channel = m[1];
+        else if ((m = url.match(/player\.twitch\.tv\/\?channel=([^&]+)/)))   appConfig.channel = m[1];
+      }
+      if (!appConfig.quickActionsUuid && (m = url.match(/quick-actions\?uuid=([a-f0-9-]+)/)))
+        appConfig.quickActionsUuid = m[1];
+      if (!appConfig.seActivityUrl && /streamelements\.com\/dashboard\/.+\/activity/.test(url))
+        appConfig.seActivityUrl = url;
+      if (!appConfig.seOverlayUrl && /streamelements\.com\/overlay\//.test(url))
+        appConfig.seOverlayUrl = url;
+      if (!appConfig.tikfinityCid && (m = url.match(/tikfinity\.zerody\.one\/widget\/[^?]*\?cid=(\d+)/)))
+        appConfig.tikfinityCid = m[1];
+    }
+    if (appConfig.channel) saveConfig();
+  }
+
+  // Presets are derived from config. A preset with an empty url is "not
+  // configured" — it's skipped in the default layout, and adding it prompts
+  // the user to complete Channel Setup first.
+  function getPresets() {
+    const c = appConfig;
+    const ch = encodeURIComponent(c.channel);
+    const uuid = c.quickActionsUuid ? `?uuid=${encodeURIComponent(c.quickActionsUuid)}` : '';
+    return {
+      'quick-actions': {
+        title: 'Quick Actions',
+        url: c.channel ? `https://dashboard.twitch.tv/popout/u/${ch}/stream-manager/quick-actions${uuid}` : '',
+        w: 4, h: 6
+      },
+      'activity-feed': {
+        title: 'Activity Feed',
+        url: c.seActivityUrl,
+        w: 4, h: 6,
+        type: 'webview'  // must be webview — iframe blocks SE auth cookies (third-party SameSite policy)
+      },
+      'chat': {
+        title: 'Chat',
+        url: c.channel ? `https://www.twitch.tv/popout/${ch}/chat?popout=` : '',
+        w: 4, h: 12,
+        type: 'webview'  // rendered as BrowserView so 7TV extension can inject
+      },
+      'stream': {
+        title: 'Live Preview',
+        url: c.channel ? `https://player.twitch.tv/?channel=${ch}&parent=localhost&muted=true&autoplay=true&quality=chunked` : '',
+        w: 8, h: 6,
+        type: 'webview', // BrowserView — own renderer process, immune to main-window focus/blur
+        stream: true     // signals buildPanelHTML to include the mute toggle button
+      },
+      'tikfinity-chat': {
+        title: 'TikTok Chat',
+        url: c.tikfinityCid ? `https://tikfinity.zerody.one/widget/activity-feed?cid=${encodeURIComponent(c.tikfinityCid)}&did=1` : '',
+        w: 4, h: 6
+      },
+      'tikfinity-views': {
+        title: 'TikTok Views',
+        url: c.tikfinityCid ? `https://tikfinity.zerody.one/widget/viewercount?cid=${encodeURIComponent(c.tikfinityCid)}` : '',
+        w: 2, h: 2
+      },
+      'predictions': {
+        title: 'Predictions',
+        url: c.channel ? `https://www.twitch.tv/popout/${ch}/predictions/summary` : '',
+        w: 4, h: 6
+      },
+      'sub-goal': {
+        title: 'Sub Goal',
+        url: c.seOverlayUrl,
+        w: 4, h: 3
+      },
+      'stream-manager': {
+        title: 'Stream Manager',
+        url: c.channel ? `https://dashboard.twitch.tv/u/${ch}/stream-manager` : '',
+        w: 6, h: 9
+      }
+    };
+  }
 
   const DEFAULT_LAYOUT = [
     { id: 'p-quick-actions-default', preset: 'quick-actions', x: 0, y: 0,  w: 4, h: 6 },
@@ -872,7 +1107,9 @@
     rows: 126,
     gap: 0,
     float: true,
-    animate: false  // animations during drag cause visible lag; off by default
+    animate: false,  // animations during drag cause visible lag; off by default
+    statsBar: true,     // Twitch dashboard stats strip at the top
+    statsHidden: []     // labels the user chose to hide (e.g. ['Bitrate'])
   };
 
   // ============ STATE ============
@@ -1047,8 +1284,11 @@
   }
 
   function calculateCellHeightForRows(rows, gap) {
+    // Grid height is the wrapper, not the window — the stats bar (when shown)
+    // takes its slice off the top.
+    const wrapper = document.getElementById('grid-wrapper');
     const totalGap = gap * (rows + 1);
-    const available = window.innerHeight - totalGap;
+    const available = (wrapper ? wrapper.clientHeight : window.innerHeight) - totalGap;
     return Math.max(1, available / rows);
   }
 
@@ -1467,9 +1707,16 @@
     document.getElementById('custom-name').value = '';
     document.getElementById('custom-url').value = '';
   }
-  function addPresetPanel(presetKey) {
-    const preset = PRESETS[presetKey];
+  async function addPresetPanel(presetKey) {
+    const preset = getPresets()[presetKey];
     if (!preset) return;
+    if (!preset.url) {
+      closeAddModal();
+      await showConfirm('Setup Needed',
+        `"${preset.title}" needs its channel/ID configured first. Opening Channel Setup…`, 'OK');
+      openSetup();
+      return;
+    }
     const id = `p-${presetKey}-${Date.now()}`;
     addPanel(id, { ...preset, preset: presetKey });
     closeAddModal();
@@ -1696,8 +1943,10 @@
               node.w = settings.columns - node.x;
               if (node.w < 1) { node.x = 0; node.w = Math.min(settings.columns, 4); }
             }
-            if (node.config.preset && PRESETS[node.config.preset]) {
-              const fresh = PRESETS[node.config.preset];
+            // Refresh preset URLs from config — but never clobber a working
+            // saved URL with an empty one (config field not filled in yet).
+            const fresh = node.config.preset && getPresets()[node.config.preset];
+            if (fresh && fresh.url) {
               node.config.url    = fresh.url;
               node.config.type   = fresh.type;
               node.config.stream = fresh.stream || false;
@@ -1716,8 +1965,11 @@
     const colRatio = settings.columns / 12;
     const rowRatio = settings.rows / 12;
 
+    const presets = getPresets();
     DEFAULT_LAYOUT.forEach(item => {
-      const config = { ...PRESETS[item.preset], preset: item.preset };
+      const preset = presets[item.preset];
+      if (!preset || !preset.url) return; // not configured yet — skip
+      const config = { ...preset, preset: item.preset };
       addPanel(item.id, config, {
         x: Math.round(item.x * colRatio),
         y: Math.round(item.y * rowRatio),
@@ -1807,6 +2059,168 @@
     toast.classList.add('visible');
   }
 
+  // ============ CHANNEL SETUP ============
+  function openSetup() {
+    document.getElementById('setup-channel').value     = appConfig.channel;
+    document.getElementById('setup-se-activity').value = appConfig.seActivityUrl;
+    document.getElementById('setup-se-overlay').value  = appConfig.seOverlayUrl;
+    document.getElementById('setup-tikfinity').value   = appConfig.tikfinityCid;
+    document.getElementById('setup-qa-uuid').value     = appConfig.quickActionsUuid;
+    document.getElementById('setup-modal').classList.add('show');
+    document.body.classList.add('modal-open');
+    setTimeout(() => document.getElementById('setup-channel').focus(), 50);
+  }
+
+  function closeSetup() {
+    document.getElementById('setup-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+  }
+
+  async function saveSetup() {
+    const channel = document.getElementById('setup-channel').value.trim()
+      .replace(/^https?:\/\/(www\.)?twitch\.tv\//i, '').replace(/\/.*$/, ''); // accept pasted URLs
+    if (!/^[a-zA-Z0-9_]{3,32}$/.test(channel)) {
+      await showConfirm('Invalid Channel', 'Please enter a valid Twitch channel name (letters, numbers, underscores).', 'OK');
+      return;
+    }
+    const changed =
+      channel !== appConfig.channel ||
+      document.getElementById('setup-se-activity').value.trim() !== appConfig.seActivityUrl ||
+      document.getElementById('setup-se-overlay').value.trim()  !== appConfig.seOverlayUrl ||
+      document.getElementById('setup-tikfinity').value.trim()   !== appConfig.tikfinityCid ||
+      document.getElementById('setup-qa-uuid').value.trim()     !== appConfig.quickActionsUuid;
+
+    appConfig.channel          = channel;
+    appConfig.seActivityUrl    = document.getElementById('setup-se-activity').value.trim();
+    appConfig.seOverlayUrl     = document.getElementById('setup-se-overlay').value.trim();
+    appConfig.tikfinityCid     = document.getElementById('setup-tikfinity').value.trim();
+    appConfig.quickActionsUuid = document.getElementById('setup-qa-uuid').value.trim();
+    saveConfig();
+    closeSetup();
+
+    if (changed) {
+      // Panel URLs are derived from config — rebuild everything
+      window.electronAPI?.bvDestroyAll();
+      window.electronAPI?.statsStop();
+      location.reload();
+    }
+  }
+
+  // ============ STATS BAR ============
+  // Data arrives from main as [{ label, value }, …] scraped from the Twitch
+  // dashboard (see main.js). The bar and each individual stat are hideable;
+  // hiding the whole bar also destroys the hidden scraper view in main.
+  let _lastStats = [];
+
+  function statsBarActive() {
+    return settings.statsBar && !!appConfig.channel && !!window.electronAPI;
+  }
+
+  function applyStatsBar() {
+    const bar = document.getElementById('stats-bar');
+    const active = statsBarActive();
+    bar.classList.toggle('hidden', !active);
+    if (active) window.electronAPI.statsStart(appConfig.channel);
+    else        window.electronAPI?.statsStop();
+    // Bar visibility changes the grid's height — rescale rows and re-pin BVs
+    if (grid) grid.cellHeight(calculateCellHeight());
+    setTimeout(syncAllBVBounds, 50);
+  }
+
+  function toggleStatsBar() {
+    settings.statsBar = !settings.statsBar;
+    saveSettings();
+    closeStatsMenu();
+    applyStatsBar();
+  }
+
+  function renderStats() {
+    const wrap = document.getElementById('stats-items');
+    wrap.replaceChildren();
+    const visible = _lastStats.filter(s => !settings.statsHidden.includes(s.label));
+    if (visible.length === 0) {
+      const ph = document.createElement('div');
+      ph.id = 'stats-placeholder';
+      ph.textContent = _lastStats.length === 0
+        ? 'Loading stream stats… (requires Twitch login)'
+        : 'All stats hidden — use ⚙ to show them';
+      wrap.appendChild(ph);
+      return;
+    }
+    for (const s of visible) {
+      const tile  = document.createElement('div');
+      tile.className = 'stat';
+      const value = document.createElement('span');
+      value.className = 'stat-value';
+      value.textContent = s.value;
+      const label = document.createElement('span');
+      label.className = 'stat-label';
+      label.textContent = s.label;
+      const x = document.createElement('button');
+      x.className = 'stat-x';
+      x.textContent = '✕';
+      x.title = `Hide ${s.label}`;
+      x.onclick = () => hideStat(s.label);
+      tile.append(value, label, x);
+      wrap.appendChild(tile);
+    }
+  }
+
+  function hideStat(label) {
+    // Reassign rather than push — settings.statsHidden may still alias the
+    // DEFAULT_SETTINGS array after a shallow { ...DEFAULT_SETTINGS } copy.
+    if (!settings.statsHidden.includes(label)) {
+      settings.statsHidden = [...settings.statsHidden, label];
+    }
+    saveSettings();
+    renderStats();
+  }
+
+  function toggleStatsMenu(event) {
+    event?.stopPropagation();
+    const menu = document.getElementById('stats-menu');
+    if (!menu.classList.contains('hidden')) { closeStatsMenu(); return; }
+    // Build a checkbox row per known stat (seen live or currently hidden)
+    const labels = [...new Set([..._lastStats.map(s => s.label), ...settings.statsHidden])];
+    menu.replaceChildren();
+    if (labels.length === 0) {
+      const row = document.createElement('div');
+      row.className = 'stats-menu-item';
+      row.textContent = 'No stats received yet';
+      menu.appendChild(row);
+    }
+    for (const label of labels) {
+      const row = document.createElement('label');
+      row.className = 'stats-menu-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !settings.statsHidden.includes(label);
+      cb.onchange = () => {
+        settings.statsHidden = cb.checked
+          ? settings.statsHidden.filter(l => l !== label)
+          : [...settings.statsHidden, label];
+        saveSettings();
+        renderStats();
+      };
+      row.append(cb, document.createTextNode(label));
+      menu.appendChild(row);
+    }
+    menu.classList.remove('hidden');
+    // BVs sit above the DOM — hide them while the dropdown is open
+    bvHide();
+  }
+
+  function closeStatsMenu() {
+    const menu = document.getElementById('stats-menu');
+    if (menu.classList.contains('hidden')) return;
+    menu.classList.add('hidden');
+    bvShow();
+  }
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#stats-menu') && !e.target.closest('#stats-gear')) closeStatsMenu();
+  });
+
   // ============ NATIVE MENU SYNC ============
   function notifyMenuUpdate() {
     if (!window.electronAPI) return;
@@ -1819,15 +2233,17 @@
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reloadAll(); }
     if (e.ctrlKey && e.key === 'l') { e.preventDefault(); toggleLock(); }
+    if (e.ctrlKey && e.key === 'b') { e.preventDefault(); toggleStatsBar(); }
     if (e.ctrlKey && e.key === ',') { e.preventDefault(); openSettings(); }
     if (e.key === 'Escape') {
       closeAddModal(); cancelSettings(); closeEditUrlModal();
-      closeSaveLayoutModal(); closeUpdateModal();
+      closeSaveLayoutModal(); closeUpdateModal(); closeSetup(); closeStatsMenu();
       resolveConfirm(false);
     }
   });
 
   // ============ STARTUP ============
+  loadConfig();   // before loadLayout — presets are built from config
   loadSettings();
   initGrid();
   bindSettingsControls();
@@ -1835,12 +2251,21 @@
   applySettings();
   loadLockState();
   notifyMenuUpdate();
+  applyStatsBar();
 
   if (window.electronAPI) {
     window.electronAPI.onUpdateStatus(showUpdateStatus);
     // Recover any state that arrived before this listener registered
     window.electronAPI.getUpdateStatus().then(p => { if (p) showUpdateStatus(p); }).catch(() => {});
+    window.electronAPI.onStatsData(stats => {
+      if (!statsBarActive()) return;
+      _lastStats = stats;
+      renderStats();
+    });
   }
+
+  // First run on a fresh PC: collect the channel before anything can load
+  if (!appConfig.channel) openSetup();
 </script>
 
 </body>
