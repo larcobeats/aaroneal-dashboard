@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, Notification, screen } = require('electron');
+const { app, BrowserWindow, BrowserView, session, shell, Menu, ipcMain, Notification, screen, webFrameMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { execSync } = require('child_process');
 const path = require('path');
@@ -378,6 +378,61 @@ ipcMain.on('bv-set-bounds',     (_e, { id, bounds }) => setBVBounds(id, bounds))
 ipcMain.on('bv-set-all-bounds', (_e, updates) => updates.forEach(({ id, bounds }) => setBVBounds(id, bounds)));
 ipcMain.on('bv-set-visible',    (_e, visible) => visible ? showAllBVs() : hideAllBVs());
 
+// ─── Freeze frames ───────────────────────────────────────────────────────────
+// BrowserViews are native overlays — DOM menus/modals can never render above
+// them. Instead of blanking panels while UI chrome is open, the renderer asks
+// for a screenshot of every BV first, shows those in place, and only then
+// hides the live views. Menus appear to float over (frozen) panel content.
+
+ipcMain.handle('bv-freeze', async () => {
+  const shots = await Promise.all([...bvMap.entries()].map(async ([id, entry]) => {
+    try {
+      const img = await Promise.race([
+        entry.view.webContents.capturePage(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 300)),
+      ]);
+      if (img && !img.isEmpty()) return { id, dataURL: img.toDataURL() };
+    } catch {}
+    return null;
+  }));
+  return shots.filter(Boolean);
+});
+
+// ─── Scrollbar styling for embedded pages ────────────────────────────────────
+// Twitch/StreamElements pages inside panels ship the stock bulky scrollbars.
+// The renderer's CSS can't reach into cross-origin frames, so inject a slim
+// scrollbar style into every frame of every webContents from here.
+
+const SCROLLBAR_INJECT_JS = `(() => {
+  if (document.getElementById('__aaroneal_scrollbars')) return;
+  const s = document.createElement('style');
+  s.id = '__aaroneal_scrollbars';
+  s.textContent = \`
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.16);
+      border-radius: 10px;
+      border: 3px solid transparent;
+      background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); border: 3px solid transparent; background-clip: content-box; }
+  \`;
+  (document.head || document.documentElement).appendChild(s);
+})()`;
+
+function injectScrollbarStyles(wc) {
+  wc.on('did-frame-finish-load', (_e, isMainFrame, processId, routingId) => {
+    // The dashboard's own document already styles its scrollbars
+    if (wc === mainWin?.webContents && isMainFrame) return;
+    try {
+      const frame = webFrameMain.fromId(processId, routingId);
+      frame?.executeJavaScript(SCROLLBAR_INJECT_JS).catch(() => {});
+    } catch {}
+  });
+}
+
 // ─── Twitch dashboard stats scraper ──────────────────────────────────────────
 // The stats strip on dashboard.twitch.tv (Session / Viewers / Followers /
 // Bitrate / Subscribers / Sub Points / Pre-roll) has no popout URL, and the
@@ -753,6 +808,7 @@ async function createWindow() {
 app.on('web-contents-created', (_e, wc) => {
   setupHeaderStripping(wc.session);
   applyWindowOpenHandler(wc);
+  injectScrollbarStyles(wc);
 
   wc.on('will-navigate', (event, url) => {
     if (wc === mainWin?.webContents) return; // main window: always allow

@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // visible=false → hide all BVs (during drag, resize, or modal open)
   // visible=true  → restore all BVs with their latest bounds
   bvSetVisible:  (visible) => ipcRenderer.send('bv-set-visible',    visible),
+  // Screenshot every BV (returns [{ id, dataURL }]) — call BEFORE hiding so
+  // panels can show a freeze-frame while menus/modals are open above them.
+  bvFreeze:      ()        => ipcRenderer.invoke('bv-freeze'),
 
   // ── Twitch dashboard stats bar ──────────────────────────────────────────────
   // Main process scrapes the stats strip from a hidden Stream Manager view and

@@ -8,22 +8,30 @@
 <link rel="stylesheet" href="vendor/gridstack.min.css">
 
 <style>
+  @font-face {
+    font-family: 'Geist';
+    src: url('vendor/geist-var.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+
   :root {
-    --bg:           #0c0c0f;
-    --surface:      #111116;
-    --panel:        #141418;
-    --panel-2:      #1b1b22;
-    --panel-hover:  #20202a;
-    --border:       #2a2a36;
-    --border-sub:   #1e1e28;
-    --text:         #eeeef4;
-    --text-dim:     #8888a0;
-    --text-muted:   #50505f;
-    --accent:       #7b8cff;
-    --accent-dim:   rgba(123, 140, 255, 0.14);
-    --accent-glow:  rgba(123, 140, 255, 0.3);
-    --danger:       #ff5264;
-    --danger-dim:   rgba(255, 82, 100, 0.12);
+    --bg:           #0a0a0d;
+    --surface:      #0e0e12;
+    --panel:        #111116;
+    --panel-2:      #16161c;
+    --panel-hover:  #1c1c23;
+    --border:       #26262f;
+    --border-sub:   #1c1c23;
+    --text:         #f2f2f6;
+    --text-dim:     #9d9dac;
+    --text-muted:   #585866;
+    --accent:       #e9e9f0;
+    --accent-dim:   rgba(233, 233, 240, 0.08);
+    --accent-glow:  rgba(233, 233, 240, 0.22);
+    --danger:       #f4566a;
+    --danger-dim:   rgba(244, 86, 106, 0.12);
     --header-h:     22px;
     --gap:          0px;
   }
@@ -36,8 +44,10 @@
     overflow: hidden;
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+    font-family: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
     font-size: 12px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   /* Stats bar sits above the grid; the grid takes whatever height remains */
@@ -49,64 +59,65 @@
   /* ===== STATS BAR ===== */
   #stats-bar {
     flex: 0 0 auto;
+    position: relative;
     display: flex;
     align-items: stretch;
+    justify-content: center;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    height: 42px;
+    border-bottom: 1px solid var(--border-sub);
+    height: 44px;
     overflow: hidden;
     user-select: none;
   }
   #stats-bar.hidden { display: none; }
 
   #stats-items {
-    flex: 1;
     display: flex;
     align-items: stretch;
+    justify-content: safe center;
+    max-width: 100%;
+    margin: 0 48px; /* stay clear of the action buttons */
     overflow-x: auto;
     overflow-y: hidden;
+    scrollbar-width: none;
   }
+  #stats-items::-webkit-scrollbar { display: none; }
 
   .stat {
-    position: relative;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    padding: 0 16px;
-    border-right: 1px solid var(--border-sub);
+    align-items: center;
+    gap: 1px;
+    padding: 0 18px;
+    margin: 5px 1px;
+    border-radius: 8px;
+    cursor: pointer;
     white-space: nowrap;
+    transition: background 0.12s ease, opacity 0.12s ease, transform 0.1s ease;
   }
+  .stat:hover  { background: rgba(255, 255, 255, 0.05); }
+  .stat:active { transform: scale(0.96); }
+  .stat.dragging { opacity: 0.35; }
+  .stat.masked .stat-value { color: var(--text-muted); letter-spacing: 2px; }
+  .stat.masked .stat-label { color: var(--text-muted); }
+
   .stat-value {
     font-size: 13px;
     font-weight: 600;
     color: var(--text);
     font-variant-numeric: tabular-nums;
-    line-height: 1.2;
+    letter-spacing: 0.01em;
+    line-height: 1.25;
   }
   .stat-label {
     font-size: 9px;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.07em;
     color: var(--text-muted);
     line-height: 1.2;
   }
-  .stat .stat-x {
-    position: absolute;
-    top: 1px;
-    right: 1px;
-    background: transparent;
-    border: 0;
-    color: var(--text-muted);
-    font-size: 9px;
-    line-height: 1;
-    padding: 2px 3px;
-    cursor: pointer;
-    border-radius: 3px;
-    opacity: 0;
-    transition: opacity 0.1s ease;
-  }
-  .stat:hover .stat-x { opacity: 1; }
-  .stat .stat-x:hover { color: var(--danger); background: var(--danger-dim); }
 
   #stats-placeholder {
     display: flex;
@@ -117,11 +128,13 @@
   }
 
   .stats-actions {
+    position: absolute;
+    right: 6px;
+    top: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 0 8px;
-    flex-shrink: 0;
   }
   .stats-actions button {
     background: transparent;
@@ -142,15 +155,15 @@
 
   #stats-menu {
     position: fixed;
-    top: 44px;
+    top: 48px;
     right: 8px;
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 0;
-    min-width: 180px;
+    border-radius: 10px;
+    padding: 6px 0;
+    min-width: 190px;
     z-index: 9998;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03);
   }
   #stats-menu.hidden { display: none; }
   #stats-menu .stats-menu-item {
@@ -184,7 +197,7 @@
   .grid-stack-item-content {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -211,7 +224,7 @@
   }
 
   .grid-stack-item:hover > .grid-stack-item-content {
-    border-color: #38384a;
+    border-color: #34343f;
   }
 
   /* ===== RESIZE HANDLES ===== */
@@ -286,15 +299,16 @@
 
   body.locked .panel-header { cursor: default; }
 
-  /* Colored left stripe — identifies panel type at a glance */
+  /* Colored dot — identifies panel type at a glance */
   .panel-header .type-stripe {
-    width: 3px;
-    height: 100%;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
     flex-shrink: 0;
-    margin-right: 9px;
+    margin: 0 8px 0 9px;
     background: var(--accent);
-    opacity: 0.8;
-    transition: opacity 0.1s ease;
+    opacity: 0.9;
+    transition: opacity 0.1s ease, background 0.15s ease;
   }
 
   .panel-header .title-group {
@@ -341,6 +355,7 @@
     color: var(--text);
     background: rgba(255, 255, 255, 0.07);
   }
+  .panel-header button:active { transform: scale(0.92); }
 
   .panel-header button.close-btn:hover {
     color: var(--danger);
@@ -403,7 +418,7 @@
     align-items: center;
     justify-content: center;
     z-index: 9999;
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(8px) saturate(1.1);
   }
 
   .modal-overlay.show { display: flex; }
@@ -417,7 +432,7 @@
   .modal {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     width: 480px;
     max-width: 90vw;
     max-height: 85vh;
@@ -564,7 +579,9 @@
     border-color: var(--accent);
     background: var(--accent-dim);
     color: var(--text);
+    transform: translateY(-1px);
   }
+  .preset-card:active { transform: translateY(0) scale(0.98); }
   .preset-card .preset-icon { font-size: 20px; line-height: 1; }
   .preset-card .preset-name { font-size: 11px; font-weight: 600; color: var(--text); }
   .preset-card .preset-desc { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
@@ -596,6 +613,7 @@
     border-color: #3a3a4a;
     background: rgba(255, 255, 255, 0.04);
   }
+  .modal-footer button:active { transform: scale(0.97); }
   .modal-footer button.primary {
     background: var(--accent);
     color: #0c0c0f;
@@ -646,10 +664,32 @@
   }
 
   /* ===== SCROLLBAR ===== */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3a3a4a; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  /* ===== FREEZE FRAMES ===== */
+  /* Screenshot stand-ins shown while BrowserViews are hidden under menus/modals */
+  .panel-body img.bv-freeze {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+    pointer-events: none;
+  }
 
   /* ===== UPDATE TOAST ===== */
   #update-toast {
@@ -1109,7 +1149,9 @@
     float: true,
     animate: false,  // animations during drag cause visible lag; off by default
     statsBar: true,     // Twitch dashboard stats strip at the top
-    statsHidden: []     // labels the user chose to hide (e.g. ['Bitrate'])
+    statsHidden: [],    // labels removed entirely via the ⚙ menu
+    statsMasked: [],    // labels whose value is masked (click a stat to toggle)
+    statsOrder: []      // custom tile order from drag-to-reorder
   };
 
   // ============ STATE ============
@@ -1515,17 +1557,52 @@
   }
 
   // ── BrowserView panel management ─────────────────────────────────────────────
+  // BVs are native overlays that always paint above the DOM, so they must be
+  // hidden while menus/modals/drags are active. To avoid panels going blank,
+  // bvHide first swaps in a screenshot of each view (freeze frame) — UI chrome
+  // then appears to float over the (frozen) panel content.
   let _bvHideCount = 0;
+  let _freezeToken = 0;
 
-  function bvHide() {
-    if (_bvHideCount++ === 0) window.electronAPI?.bvSetVisible(false);
+  async function bvHide() {
+    if (_bvHideCount++ !== 0) return;
+    const token = ++_freezeToken;
+    try {
+      const shots = await window.electronAPI?.bvFreeze();
+      if (token === _freezeToken && _bvHideCount > 0 && shots) showFreezeFrames(shots);
+    } catch {}
+    if (token === _freezeToken && _bvHideCount > 0) window.electronAPI?.bvSetVisible(false);
   }
+
   function bvShow() {
     _bvHideCount = Math.max(0, _bvHideCount - 1);
     if (_bvHideCount === 0) {
+      _freezeToken++; // cancel any in-flight freeze capture
       syncAllBVBounds();
       window.electronAPI?.bvSetVisible(true);
+      // Let the live views paint before removing their stand-ins
+      setTimeout(clearFreezeFrames, 120);
     }
+  }
+
+  function showFreezeFrames(shots) {
+    for (const { id, dataURL } of shots) {
+      const body = document.querySelector(`#content-${id} .panel-body`);
+      if (!body) continue;
+      let img = body.querySelector('img.bv-freeze');
+      if (!img) {
+        img = document.createElement('img');
+        img.className = 'bv-freeze';
+        img.alt = '';
+        body.appendChild(img);
+      }
+      img.src = dataURL;
+    }
+  }
+
+  function clearFreezeFrames() {
+    if (_bvHideCount > 0) return; // a new hide started meanwhile — keep frames
+    document.querySelectorAll('img.bv-freeze').forEach(el => el.remove());
   }
 
   function getBVBounds(id) {
@@ -2134,10 +2211,23 @@
     applyStatsBar();
   }
 
+  // Tiles behave like Twitch's own stats strip: click a stat to mask/unmask
+  // its value (kept in place, shown as •••), drag a tile to reorder. Removing
+  // a stat entirely still lives in the ⚙ menu.
+  let _statsDragLabel = null;
+
+  function orderedVisibleStats() {
+    const order = settings.statsOrder;
+    const idx = l => { const i = order.indexOf(l); return i === -1 ? order.length : i; };
+    return _lastStats
+      .filter(s => !settings.statsHidden.includes(s.label))
+      .sort((a, b) => idx(a.label) - idx(b.label));
+  }
+
   function renderStats() {
     const wrap = document.getElementById('stats-items');
     wrap.replaceChildren();
-    const visible = _lastStats.filter(s => !settings.statsHidden.includes(s.label));
+    const visible = orderedVisibleStats();
     if (visible.length === 0) {
       const ph = document.createElement('div');
       ph.id = 'stats-placeholder';
@@ -2148,30 +2238,63 @@
       return;
     }
     for (const s of visible) {
-      const tile  = document.createElement('div');
-      tile.className = 'stat';
+      const masked = settings.statsMasked.includes(s.label);
+      const tile = document.createElement('div');
+      tile.className = 'stat' + (masked ? ' masked' : '');
+      tile.draggable = true;
+      tile.dataset.label = s.label;
+      tile.title = 'Click to hide/show · drag to reorder';
       const value = document.createElement('span');
       value.className = 'stat-value';
-      value.textContent = s.value;
+      value.textContent = masked ? '•••' : s.value;
       const label = document.createElement('span');
       label.className = 'stat-label';
       label.textContent = s.label;
-      const x = document.createElement('button');
-      x.className = 'stat-x';
-      x.textContent = '✕';
-      x.title = `Hide ${s.label}`;
-      x.onclick = () => hideStat(s.label);
-      tile.append(value, label, x);
+      tile.append(value, label);
+      tile.addEventListener('click', () => toggleStatMask(s.label));
+      tile.addEventListener('dragstart', e => {
+        _statsDragLabel = s.label;
+        tile.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', s.label); } catch {}
+      });
+      tile.addEventListener('dragend', () => {
+        tile.classList.remove('dragging');
+        _statsDragLabel = null;
+        persistStatsOrder();
+      });
       wrap.appendChild(tile);
     }
   }
 
-  function hideStat(label) {
-    // Reassign rather than push — settings.statsHidden may still alias the
-    // DEFAULT_SETTINGS array after a shallow { ...DEFAULT_SETTINGS } copy.
-    if (!settings.statsHidden.includes(label)) {
-      settings.statsHidden = [...settings.statsHidden, label];
-    }
+  function toggleStatMask(label) {
+    settings.statsMasked = settings.statsMasked.includes(label)
+      ? settings.statsMasked.filter(l => l !== label)
+      : [...settings.statsMasked, label];
+    saveSettings();
+    renderStats();
+  }
+
+  // Live reorder: while dragging, slide the tile to the hovered position
+  document.getElementById('stats-items').addEventListener('dragover', e => {
+    if (!_statsDragLabel) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const wrap = e.currentTarget;
+    const dragging = wrap.querySelector('.stat.dragging');
+    if (!dragging) return;
+    const after = [...wrap.querySelectorAll('.stat:not(.dragging)')]
+      .find(t => e.clientX < t.getBoundingClientRect().left + t.offsetWidth / 2);
+    if (after) wrap.insertBefore(dragging, after);
+    else wrap.appendChild(dragging);
+  });
+  document.getElementById('stats-items').addEventListener('drop', e => e.preventDefault());
+
+  function persistStatsOrder() {
+    const domOrder = [...document.querySelectorAll('#stats-items .stat')].map(t => t.dataset.label);
+    // keep labels that aren't currently rendered (hidden/not yet seen) behind
+    const rest = settings.statsOrder.filter(l => !domOrder.includes(l));
+    settings.statsOrder = [...domOrder, ...rest];
     saveSettings();
     renderStats();
   }
@@ -2260,7 +2383,7 @@
     window.electronAPI.onStatsData(stats => {
       if (!statsBarActive()) return;
       _lastStats = stats;
-      renderStats();
+      if (!_statsDragLabel) renderStats(); // don't rebuild tiles mid-drag
     });
   }
 
