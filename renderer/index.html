@@ -229,9 +229,12 @@
   body.locked .grid-stack-item.reveal-header .panel-header {
     height: var(--header-h);
     opacity: 1;
-    pointer-events: auto;
     border-bottom: 1px solid var(--border-sub);
   }
+  /* Only an intentionally-revealed (armed) header accepts clicks, so a cursor
+     brushing the top edge can never immediately hit Close. */
+  body.locked .grid-stack-item.reveal-header.armed .panel-header { pointer-events: auto; }
+  body.locked .panel-header .actions { opacity: 1; }
 
   .grid-stack-item-content,
   .grid-stack-item-content > * {
@@ -696,6 +699,49 @@
     background-clip: content-box;
   }
 
+  /* ===== 7TV STATUS ===== */
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 14px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .status-dot.ok   { background: #3ecf6e; box-shadow: 0 0 0 3px rgba(62, 207, 110, 0.15); }
+  .status-dot.warn { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.15); }
+  .status-dot.bad  { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-dim); }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  .status-grid dt { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; align-self: center; }
+  .status-grid dd { color: var(--text-dim); word-break: break-all; font-variant-numeric: tabular-nums; }
+  .status-grid dd.mono { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 10px; }
+
+  .status-note {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border-sub);
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--text-dim);
+  }
+  .status-note strong { color: var(--text); }
+
   /* ===== FREEZE FRAMES ===== */
   /* Screenshot stand-ins shown while BrowserViews are hidden under menus/modals */
   .panel-body img.bv-freeze {
@@ -1014,6 +1060,24 @@
     <div class="modal-footer">
       <button onclick="closeSetup()">Cancel</button>
       <button class="primary" onclick="saveSetup()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- 7TV STATUS MODAL -->
+<div class="modal-overlay" id="seventv-modal">
+  <div class="modal" style="width:560px;">
+    <div class="modal-header">
+      <span>7TV Extension</span>
+      <button class="modal-close-btn" onclick="close7TVStatus()">&#10005;</button>
+    </div>
+    <div class="modal-body" id="seventv-body">
+      <div class="status-line"><span class="status-dot"></span><span>Checking…</span></div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="pick7TVFolder()">Choose Folder…</button>
+      <button onclick="open7TVDownload()">Get 7TV</button>
+      <button class="primary" onclick="reload7TV()">Recheck &amp; Reload</button>
     </div>
   </div>
 </div>
@@ -1639,36 +1703,87 @@
   }
 
   // ── Locked-mode header reveal ────────────────────────────────────────────────
-  // While locked, headers are collapsed; hovering the top edge of a panel
+  // While locked, headers are collapsed; resting on the top edge of a panel
   // slides its header in. Cursor positions arrive from main (see hover-watch)
   // because mouse events over BrowserViews never reach this document.
-  const REVEAL_BAND = 28; // px from a panel's top edge that reveals its header
+  //
+  // Tuned to require intent: a narrow trigger band, a dwell delay before the
+  // header appears, a taller keep-open band (hysteresis) so it doesn't flicker
+  // once shown, and a short arming delay before the buttons accept clicks —
+  // so brushing past the top of a panel can never land a click on Close.
+  const REVEAL_BAND  = 10;  // px from the top edge that starts a reveal
+  const REVEAL_KEEP  = 34;  // px within which an already-open header stays open
+  const REVEAL_DELAY = 400; // ms the cursor must dwell in the band
+  const ARM_DELAY    = 220; // ms after reveal before actions become clickable
 
-  let _revealedEl = null;
+  let _revealedEl   = null;
+  let _revealTimer  = null;
+  let _armTimer     = null;
+  let _pendingEl    = null;
+
   function setRevealedPanel(el) {
     if (el === _revealedEl) return;
-    _revealedEl?.classList.remove('reveal-header');
+    clearTimeout(_armTimer);
+    _revealedEl?.classList.remove('reveal-header', 'armed');
     _revealedEl = el;
-    el?.classList.add('reveal-header');
+    if (el) {
+      el.classList.add('reveal-header');
+      // Buttons stay click-through until the header has settled
+      _armTimer = setTimeout(() => el.classList.add('armed'), ARM_DELAY);
+    }
     animateBVSync(260); // follow the 180ms height transition with margin
   }
 
   function handleCursorPos({ x, y, inside }) {
     if (!isLocked || document.body.classList.contains('modal-open')) {
+      clearTimeout(_revealTimer);
+      _pendingEl = null;
       setRevealedPanel(null);
       return;
     }
-    let target = null;
-    if (inside) {
+
+    const hit = (band) => {
+      if (!inside) return null;
       for (const item of document.querySelectorAll('.grid-stack-item')) {
         const r = item.getBoundingClientRect();
-        if (x >= r.left && x < r.right && y >= r.top && y < r.top + REVEAL_BAND) {
-          target = item;
-          break;
-        }
+        if (x >= r.left && x < r.right && y >= r.top && y < r.top + band) return item;
       }
+      return null;
+    };
+
+    // Keep an open header open across a taller band so it doesn't flicker
+    // while reaching for its buttons.
+    if (_revealedEl && hit(REVEAL_KEEP) === _revealedEl) {
+      clearTimeout(_revealTimer);
+      _pendingEl = null;
+      return;
     }
-    setRevealedPanel(target);
+
+    const target = hit(REVEAL_BAND);
+
+    // Order matters: cancel any pending reveal FIRST. Checking
+    // `target === _revealedEl` up front would early-return when both are null
+    // and leave a queued timer alive, popping the header open after the cursor
+    // had already moved away.
+    if (!target) {                    // left the edge — close, cancel any pending
+      clearTimeout(_revealTimer);
+      _pendingEl = null;
+      setRevealedPanel(null);
+      return;
+    }
+    if (target === _revealedEl) {     // already open on this panel
+      clearTimeout(_revealTimer);
+      _pendingEl = null;
+      return;
+    }
+    if (target === _pendingEl) return; // already waiting on this panel
+
+    clearTimeout(_revealTimer);
+    _pendingEl = target;
+    _revealTimer = setTimeout(() => {
+      _pendingEl = null;
+      setRevealedPanel(target);
+    }, REVEAL_DELAY);
   }
 
   function getBVBounds(id) {
@@ -2415,6 +2530,125 @@
     if (!e.target.closest('#stats-menu') && !e.target.closest('#stats-gear')) closeStatsMenu();
   });
 
+  // ============ 7TV STATUS ============
+  // The browser updates 7TV itself; this window exists so a mid-stream failure
+  // is visible and repairable without guesswork — it separates "extension
+  // loaded" from "extension actually rendering in chat".
+  function open7TVStatus() {
+    document.getElementById('seventv-modal').classList.add('show');
+    document.body.classList.add('modal-open');
+    refresh7TVStatus();
+  }
+  function close7TVStatus() {
+    document.getElementById('seventv-modal').classList.remove('show');
+    document.body.classList.remove('modal-open');
+  }
+  function open7TVDownload() {
+    window.open('https://7tv.app/', '_blank');
+  }
+
+  function render7TVStatus(s) {
+    const body = document.getElementById('seventv-body');
+    body.replaceChildren();
+    if (!s) {
+      body.innerHTML = '<div class="status-line"><span class="status-dot bad"></span><span>Status unavailable</span></div>';
+      return;
+    }
+
+    const injected = (s.injection || []).reduce((n, p) => n + p.nodes, 0);
+    const chatPanels = (s.injection || []).length;
+
+    let dot = 'bad', headline = 'Not working';
+    if (s.status === 'loaded' && (injected > 0 || chatPanels === 0)) {
+      dot = 'ok';
+      headline = chatPanels === 0
+        ? `Loaded (v${s.version}) — open a Chat panel to verify`
+        : `Working — 7TV v${s.version} is active in chat`;
+    } else if (s.status === 'loaded') {
+      dot = 'warn';
+      headline = `Loaded (v${s.version}) but not rendering in chat`;
+    } else if (s.status === 'not-found') {
+      headline = 'No 7TV installation found';
+    } else if (s.status === 'error') {
+      headline = 'Failed to load';
+    }
+
+    const line = document.createElement('div');
+    line.className = 'status-line';
+    const d = document.createElement('span');
+    d.className = 'status-dot ' + dot;
+    const t = document.createElement('span');
+    t.textContent = headline;
+    line.append(d, t);
+    body.appendChild(line);
+
+    const rows = [];
+    if (s.version) rows.push(['Version', s.version]);
+    if (s.browser) rows.push(['Source', s.browser + (s.manual ? ' (manual override)' : '')]);
+    if (s.manifestVersion) rows.push(['Manifest', 'V' + s.manifestVersion]);
+    if (chatPanels > 0) rows.push(['Chat panels', `${(s.injection || []).filter(p => p.nodes > 0).length} of ${chatPanels} showing 7TV`]);
+    if (s.available?.length > 1) rows.push(['Installs found', String(s.available.length)]);
+    if (s.error) rows.push(['Error', s.error]);
+    if (s.path) rows.push(['Path', s.path]);
+
+    const dl = document.createElement('dl');
+    dl.className = 'status-grid';
+    for (const [k, v] of rows) {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      if (k === 'Path') { dd.classList.add('mono'); dd.style.cursor = 'pointer'; dd.title = 'Show in folder';
+                          dd.onclick = () => window.electronAPI?.sevenTVOpenPath(); }
+      dl.append(dt, dd);
+    }
+    body.appendChild(dl);
+
+    const note = document.createElement('div');
+    note.className = 'status-note';
+    if (s.status === 'not-found') {
+      note.innerHTML = '<strong>Install 7TV in Chrome, Edge, Brave, Opera or Firefox</strong>, then use Recheck &amp; Reload. This app borrows the extension from your browser — it never downloads one itself. You can also point it at an unpacked build with Choose Folder.';
+    } else if (dot === 'warn') {
+      note.innerHTML = '<strong>Try Recheck &amp; Reload</strong> — this re-scans for the newest build and reloads chat. If it still fails, your browser may have updated 7TV in the background; restarting the dashboard picks up the new files.';
+    } else if (s.manual) {
+      note.innerHTML = 'Using a manually chosen folder. <strong>Choose Folder again</strong> to change it, or clear it to go back to auto-detection.';
+    } else {
+      note.innerHTML = '7TV updates come from your browser. If chat emotes stop working after an update, open this window and hit <strong>Recheck &amp; Reload</strong>.';
+    }
+    body.appendChild(note);
+
+    if (s.manual) {
+      const clear = document.createElement('button');
+      clear.className = 'preset-btn';
+      clear.style.marginTop = '10px';
+      clear.textContent = 'Clear manual folder (back to auto-detect)';
+      clear.onclick = async () => render7TVStatus(await window.electronAPI.sevenTVClearManual());
+      body.appendChild(clear);
+    }
+  }
+
+  async function refresh7TVStatus() {
+    if (!window.electronAPI) return render7TVStatus(null);
+    try { render7TVStatus(await window.electronAPI.sevenTVStatus()); }
+    catch { render7TVStatus(null); }
+  }
+
+  async function reload7TV() {
+    const body = document.getElementById('seventv-body');
+    body.innerHTML = '<div class="status-line"><span class="status-dot"></span><span>Reloading extension…</span></div>';
+    try {
+      await window.electronAPI.sevenTVReload();
+      setTimeout(refresh7TVStatus, 2500); // give chat time to re-inject
+    } catch { refresh7TVStatus(); }
+  }
+
+  async function pick7TVFolder() {
+    try {
+      const res = await window.electronAPI.sevenTVPickFolder();
+      if (res?.cancelled) return;
+      if (res?.error) { await showConfirm('Invalid Folder', res.error, 'OK'); return; }
+      setTimeout(refresh7TVStatus, 500);
+    } catch {}
+  }
+
   // ============ NATIVE MENU SYNC ============
   function notifyMenuUpdate() {
     if (!window.electronAPI) return;
@@ -2432,7 +2666,7 @@
     if (e.key === 'Escape') {
       closeAddModal(); cancelSettings(); closeEditUrlModal();
       closeSaveLayoutModal(); closeUpdateModal(); closeSetup(); closeStatsMenu();
-      resolveConfirm(false);
+      close7TVStatus(); resolveConfirm(false);
     }
   });
 

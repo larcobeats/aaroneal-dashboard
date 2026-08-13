@@ -101,21 +101,55 @@ function extractXpi(xpiPath) {
   }
 }
 
-function find7TVExtension() {
+// Compare dotted version strings numerically. Directory names are like
+// "1.9.4_0"; a plain lexicographic sort ranks "1.9.4" above "1.10.0", which
+// would pin the app to an outdated build after 7TV's next minor release.
+function compareVersions(a, b) {
+  const parse = v => String(v).split('_')[0].split('.').map(n => parseInt(n, 10) || 0);
+  const pa = parse(a), pb = parse(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+function readManifest(dir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')); }
+  catch { return null; }
+}
+
+// Collect every 7TV install on the machine (all browsers, all profiles) so the
+// newest can win and the rest can be shown in the status window.
+function find7TVCandidates() {
   const local   = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   const roaming = process.env.APPDATA      || path.join(os.homedir(), 'AppData', 'Roaming');
+  const found = [];
+
+  const add = (dir, browser) => {
+    if (!is7TVManifest(path.join(dir, 'manifest.json'))) return;
+    const m = readManifest(dir);
+    found.push({
+      path: dir,
+      browser,
+      version: m?.version || 'unknown',
+      manifestVersion: m?.manifest_version || null,
+    });
+  };
 
   // ── Chrome-family browsers (unpacked extension directories) ──────────────
   const chromeBases = [
-    path.join(local,  'Microsoft', 'Edge', 'User Data'),
-    path.join(local,  'Google', 'Chrome', 'User Data'),
-    path.join(local,  'Google', 'Chrome Beta', 'User Data'),
-    path.join(local,  'Google', 'Chrome SxS', 'User Data'),
-    path.join(local,  'BraveSoftware', 'Brave-Browser', 'User Data'),
-    path.join(roaming,'Opera Software', 'Opera Stable'),
+    [path.join(local,  'Microsoft', 'Edge', 'User Data'),               'Edge'],
+    [path.join(local,  'Google', 'Chrome', 'User Data'),                'Chrome'],
+    [path.join(local,  'Google', 'Chrome Beta', 'User Data'),           'Chrome Beta'],
+    [path.join(local,  'Google', 'Chrome SxS', 'User Data'),            'Chrome Canary'],
+    [path.join(local,  'BraveSoftware', 'Brave-Browser', 'User Data'),  'Brave'],
+    [path.join(local,  'Vivaldi', 'User Data'),                         'Vivaldi'],
+    [path.join(roaming,'Opera Software', 'Opera Stable'),               'Opera'],
+    [path.join(roaming,'Opera Software', 'Opera GX Stable'),            'Opera GX'],
   ];
 
-  for (const base of chromeBases) {
+  for (const [base, browser] of chromeBases) {
     if (!fs.existsSync(base)) continue;
     const profiles = ['Default'];
     try {
@@ -124,24 +158,17 @@ function find7TVExtension() {
 
     for (const profile of profiles) {
       const extRoot = path.join(base, profile, 'Extensions');
-      let extEntries;
-      try {
-        // Sort newest-first so the most recently installed 7TV release wins
-        extEntries = fs.readdirSync(extRoot)
-          .map(id => { try { return { id, mtime: fs.statSync(path.join(extRoot, id)).mtimeMs }; } catch { return null; } })
-          .filter(Boolean)
-          .sort((a, b) => b.mtime - a.mtime);
-      } catch { continue; }
+      let ids;
+      try { ids = fs.readdirSync(extRoot); } catch { continue; }
 
-      for (const { id } of extEntries) {
+      for (const id of ids) {
         const idPath = path.join(extRoot, id);
         try {
           const versions = fs.readdirSync(idPath)
-            .filter(v => fs.statSync(path.join(idPath, v)).isDirectory())
-            .sort();
+            .filter(v => { try { return fs.statSync(path.join(idPath, v)).isDirectory(); } catch { return false; } })
+            .sort(compareVersions);
           if (versions.length === 0) continue;
-          const latest = path.join(idPath, versions[versions.length - 1]);
-          if (is7TVManifest(path.join(latest, 'manifest.json'))) return latest;
+          add(path.join(idPath, versions[versions.length - 1]), `${browser} (${profile})`);
         } catch {}
       }
     }
@@ -161,22 +188,157 @@ function find7TVExtension() {
       for (const file of files) {
         const fullPath = path.join(extDir, file);
         try {
-          const stat = fs.statSync(fullPath);
-          if (stat.isDirectory()) {
-            // Developer-mode / temporarily-installed extension
-            if (is7TVManifest(path.join(fullPath, 'manifest.json'))) return fullPath;
+          if (fs.statSync(fullPath).isDirectory()) {
+            add(fullPath, 'Firefox (unpacked)'); // developer-mode install
           } else if (file.endsWith('.xpi') && /7tv|seventv/i.test(file)) {
-            // Signed AMO extension — extract and return unpacked path
             const extracted = extractXpi(fullPath);
-            if (extracted) return extracted;
+            if (extracted) add(extracted, 'Firefox');
           }
         } catch {}
       }
     }
   }
 
-  return null;
+  return found;
 }
+
+// Newest version wins, regardless of which browser it came from.
+function find7TVExtension() {
+  const manual = loadManualExtPath();
+  if (manual && is7TVManifest(path.join(manual, 'manifest.json'))) {
+    const m = readManifest(manual);
+    return { path: manual, browser: 'Manual folder', version: m?.version || 'unknown',
+             manifestVersion: m?.manifest_version || null, manual: true };
+  }
+  const all = find7TVCandidates();
+  if (all.length === 0) return null;
+  all.sort((a, b) => compareVersions(a.version, b.version));
+  return { ...all[all.length - 1], candidates: all.length };
+}
+
+// ─── 7TV load / status / repair ───────────────────────────────────────────────
+// The browser owns the extension's updates; this app just loads whatever build
+// is on disk. So the useful controls are: re-scan and reload without a restart,
+// point at a manually downloaded build, and verify that it actually injected.
+
+let _sevenTV = { status: 'unknown' }; // { status, version, browser, path, error, extensionId }
+
+function manualPathFile() {
+  return path.join(app.getPath('userData'), '7tv-path.json');
+}
+function loadManualExtPath() {
+  try { return JSON.parse(fs.readFileSync(manualPathFile(), 'utf8')).path || null; }
+  catch { return null; }
+}
+function saveManualExtPath(p) {
+  try {
+    if (p) fs.writeFileSync(manualPathFile(), JSON.stringify({ path: p }));
+    else if (fs.existsSync(manualPathFile())) fs.rmSync(manualPathFile());
+  } catch (e) { console.warn('[7TV] could not save manual path:', e.message); }
+}
+
+async function load7TV(ses) {
+  const found = find7TVExtension();
+  if (!found) {
+    _sevenTV = { status: 'not-found' };
+    console.warn('[7TV] No 7TV install found in any supported browser.');
+    return _sevenTV;
+  }
+  // Drop any previously loaded copy so a reload picks up a new version
+  try {
+    for (const ext of ses.getAllExtensions()) {
+      if (/7tv|seventv/i.test(ext.name)) await ses.removeExtension(ext.id);
+    }
+  } catch {}
+  try {
+    const ext = await ses.loadExtension(found.path, { allowFileAccess: true });
+    _sevenTV = {
+      status: 'loaded',
+      version: ext.version,
+      browser: found.browser,
+      path: found.path,
+      manual: !!found.manual,
+      manifestVersion: found.manifestVersion,
+      extensionId: ext.id,
+      candidates: found.candidates || 1,
+    };
+    console.log(`[7TV] Loaded v${ext.version} from ${found.browser}: ${found.path}`);
+  } catch (err) {
+    _sevenTV = { status: 'error', error: err.message, path: found.path,
+                 browser: found.browser, version: found.version };
+    console.warn('[7TV] Failed to load:', err.message);
+  }
+  return _sevenTV;
+}
+
+// Ask a chat panel whether 7TV actually rendered into the page. Proves the
+// difference between "extension loaded" and "extension working".
+const SEVENTV_PROBE_JS = `(() => {
+  try {
+    return document.querySelectorAll('[class*="seventv"], [id*="seventv"], .seventv-emote').length;
+  } catch { return 0; }
+})()`;
+
+async function probe7TVInjection() {
+  const results = [];
+  for (const [id, entry] of bvMap) {
+    if (!isTwitchPopoutChat(entry.homeUrl)) continue;
+    try {
+      const nodes = await entry.view.webContents.executeJavaScript(SEVENTV_PROBE_JS);
+      results.push({ id, nodes: Number(nodes) || 0 });
+    } catch {
+      results.push({ id, nodes: 0 });
+    }
+  }
+  return results;
+}
+
+ipcMain.handle('seventv-status', async () => {
+  const injection = await probe7TVInjection();
+  const available = find7TVCandidates().map(c => ({
+    browser: c.browser, version: c.version, path: c.path,
+  })).sort((a, b) => compareVersions(a.version, b.version)).reverse();
+  return { ..._sevenTV, injection, available };
+});
+
+// Re-scan disk, reload the extension, then reload chat panels so their content
+// scripts run again — this is the "it broke mid-stream" repair button.
+ipcMain.handle('seventv-reload', async () => {
+  const ses = session.fromPartition('persist:main');
+  const state = await load7TV(ses);
+  if (state.status === 'loaded') {
+    for (const [, entry] of bvMap) {
+      if (isTwitchPopoutChat(entry.homeUrl)) {
+        try { entry.view.webContents.reload(); } catch {}
+      }
+    }
+  }
+  return state;
+});
+
+ipcMain.handle('seventv-pick-folder', async () => {
+  const { dialog } = require('electron');
+  const res = await dialog.showOpenDialog(mainWin, {
+    title: 'Select an unpacked 7TV extension folder (the one containing manifest.json)',
+    properties: ['openDirectory'],
+  });
+  if (res.canceled || !res.filePaths[0]) return { cancelled: true };
+  const dir = res.filePaths[0];
+  if (!is7TVManifest(path.join(dir, 'manifest.json'))) {
+    return { error: 'That folder does not contain a 7TV manifest.json.' };
+  }
+  saveManualExtPath(dir);
+  return await load7TV(session.fromPartition('persist:main'));
+});
+
+ipcMain.handle('seventv-clear-manual', async () => {
+  saveManualExtPath(null);
+  return await load7TV(session.fromPartition('persist:main'));
+});
+
+ipcMain.on('seventv-open-path', () => {
+  if (_sevenTV.path) shell.showItemInFolder(_sevenTV.path);
+});
 
 // ─── Header stripping ─────────────────────────────────────────────────────────
 
@@ -632,6 +794,8 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
+        { label: '7TV Status…', click: js('open7TVStatus()') },
+        { type: 'separator' },
         { label: 'View on GitHub',
           click: () => shell.openExternal('https://github.com/larcobeats/aaroneal-dashboard') },
         { type: 'separator' },
@@ -779,17 +943,7 @@ async function createWindow() {
   const ses = session.fromPartition('persist:main');
   setupHeaderStripping(ses);
 
-  const tvPath = find7TVExtension();
-  if (tvPath) {
-    try {
-      await ses.loadExtension(tvPath, { allowFileAccess: true });
-      console.log('[7TV] Loaded from:', tvPath);
-    } catch (err) {
-      console.warn('[7TV] Failed to load:', err.message);
-    }
-  } else {
-    console.warn('[7TV] Not found in any Chrome/Edge/Brave profile.');
-  }
+  await load7TV(ses);
 
   const winState = loadWindowState();
 
@@ -833,6 +987,15 @@ async function createWindow() {
   // events aren't silently dropped before onUpdateStatus is registered.
   mainWin.webContents.once('did-finish-load', () => {
     setTimeout(triggerUpdateCheck, 2000);
+    // Surface a broken 7TV once at startup — otherwise it's only noticed
+    // mid-stream when emotes are missing.
+    setTimeout(() => {
+      if (_sevenTV.status === 'not-found') {
+        notify('Aaroneal Dashboard', '7TV was not found. Chat emotes are disabled — see Help → 7TV Status.');
+      } else if (_sevenTV.status === 'error') {
+        notify('Aaroneal Dashboard', `7TV failed to load: ${_sevenTV.error}. See Help → 7TV Status.`);
+      }
+    }, 12000);
   });
 }
 

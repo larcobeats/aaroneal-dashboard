@@ -29,6 +29,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // panels can show a freeze-frame while menus/modals are open above them.
   bvFreeze:      ()        => ipcRenderer.invoke('bv-freeze'),
 
+  // ── 7TV extension status / repair ───────────────────────────────────────────
+  sevenTVStatus:      ()  => ipcRenderer.invoke('seventv-status'),
+  sevenTVReload:      ()  => ipcRenderer.invoke('seventv-reload'),
+  sevenTVPickFolder:  ()  => ipcRenderer.invoke('seventv-pick-folder'),
+  sevenTVClearManual: ()  => ipcRenderer.invoke('seventv-clear-manual'),
+  sevenTVOpenPath:    ()  => ipcRenderer.send('seventv-open-path'),
+
   // ── Locked-mode hover watch ─────────────────────────────────────────────────
   // While active, main polls the OS cursor (mouse events over BrowserViews
   // never reach this document) and streams window-relative { x, y, inside }.
